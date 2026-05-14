@@ -1,0 +1,237 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>{{ game.name }} Map</title>
+    <style>
+        body {
+            margin: 0;
+            background: #111827;
+            color: #f9fafb;
+            font-family: Arial, sans-serif;
+        }
+
+        header {
+            padding: 16px 24px;
+            background: #020617;
+            border-bottom: 1px solid #334155;
+        }
+
+        h1 {
+            margin: 0 0 4px;
+            font-size: 24px;
+        }
+
+        .meta {
+            color: #cbd5e1;
+            font-size: 14px;
+        }
+
+        .map-wrap {
+            overflow: auto;
+            height: calc(100vh - 82px);
+        }
+
+        svg {
+            display: block;
+            background: #0f172a;
+        }
+
+        .hex {
+            stroke: #020617;
+            stroke-width: 1;
+            cursor: pointer;
+        }
+
+        .hex:hover {
+            stroke: #f9fafb;
+            stroke-width: 2;
+        }
+
+        .unit {
+            pointer-events: none;
+        }
+
+        .unit-label {
+            fill: #ffffff;
+            font-size: 10px;
+            font-weight: bold;
+            text-anchor: middle;
+            dominant-baseline: central;
+            pointer-events: none;
+        }
+    </style>
+</head>
+<body>
+<header>
+    <h1>{{ game.name }}</h1>
+    <div class="meta">
+        Turn {{ game.current_turn }} |
+        Size {{ game.width }}x{{ game.height }} |
+        Seed {{ game.seed }}
+    </div>
+</header>
+
+<div class="map-wrap">
+    <svg
+        id="map"
+        width="{{ game.width|add:game.height|add:10 }}00"
+        height="{{ game.height|add:10 }}80"
+        xmlns="http://www.w3.org/2000/svg"
+    >
+        {% for hex in hexes %}
+            <g
+                class="hex-group"
+                data-q="{{ hex.q }}"
+                data-r="{{ hex.r }}"
+                data-terrain="{{ hex.terrain }}"
+                data-owner="{% if hex.owner %}{{ hex.owner.name }}{% endif %}"
+                data-owner-color="{% if hex.owner %}{{ hex.owner.color }}{% endif %}"
+            ></g>
+        {% endfor %}
+
+        {% for unit in game.units.all %}
+            <g
+                class="unit-group"
+                data-q="{{ unit.q }}"
+                data-r="{{ unit.r }}"
+                data-color="{{ unit.nation.color }}"
+                data-label="{{ unit.unit_type|slice:':1'|upper }}"
+            ></g>
+        {% endfor %}
+    </svg>
+</div>
+
+<script>
+    const size = 18;
+    const offsetX = 80;
+    const offsetY = 80;
+
+    const terrainColors = {
+        water: "#2563eb",
+        plains: "#84cc16",
+        forest: "#15803d",
+        hill: "#a16207",
+        mountain: "#78716c",
+        desert: "#facc15"
+    };
+
+    function axialToPixel(q, r) {
+        const x = size * Math.sqrt(3) * (q + r / 2);
+        const y = size * 1.5 * r;
+
+        return {
+            x: x + offsetX,
+            y: y + offsetY
+        };
+    }
+
+    function hexCorner(centerX, centerY, i) {
+        const angleDeg = 60 * i - 30;
+        const angleRad = Math.PI / 180 * angleDeg;
+
+        return {
+            x: centerX + size * Math.cos(angleRad),
+            y: centerY + size * Math.sin(angleRad)
+        };
+    }
+
+    function hexPoints(centerX, centerY) {
+        const points = [];
+
+        for (let i = 0; i < 6; i += 1) {
+            const corner = hexCorner(centerX, centerY, i);
+            points.push(`${corner.x},${corner.y}`);
+        }
+
+        return points.join(" ");
+    }
+
+    function renderHexes() {
+        const svg = document.getElementById("map");
+        const groups = document.querySelectorAll(".hex-group");
+
+        groups.forEach((group) => {
+            const q = Number(group.dataset.q);
+            const r = Number(group.dataset.r);
+            const terrain = group.dataset.terrain;
+            const owner = group.dataset.owner;
+            const ownerColor = group.dataset.ownerColor;
+
+            const position = axialToPixel(q, r);
+
+            const polygon = document.createElementNS(
+                "http://www.w3.org/2000/svg",
+                "polygon"
+            );
+
+            polygon.setAttribute("class", "hex");
+            polygon.setAttribute("points", hexPoints(position.x, position.y));
+            polygon.setAttribute("fill", terrainColors[terrain] || "#64748b");
+
+            if (ownerColor) {
+                polygon.setAttribute("stroke", ownerColor);
+                polygon.setAttribute("stroke-width", "3");
+            }
+
+            const title = document.createElementNS(
+                "http://www.w3.org/2000/svg",
+                "title"
+            );
+
+            title.textContent = owner
+                ? `(${q}, ${r}) ${terrain} - ${owner}`
+                : `(${q}, ${r}) ${terrain}`;
+
+            polygon.appendChild(title);
+            group.appendChild(polygon);
+            svg.appendChild(group);
+        });
+    }
+
+    function renderUnits() {
+        const svg = document.getElementById("map");
+        const groups = document.querySelectorAll(".unit-group");
+
+        groups.forEach((group) => {
+            const q = Number(group.dataset.q);
+            const r = Number(group.dataset.r);
+            const color = group.dataset.color;
+            const label = group.dataset.label;
+
+            const position = axialToPixel(q, r);
+
+            const circle = document.createElementNS(
+                "http://www.w3.org/2000/svg",
+                "circle"
+            );
+
+            circle.setAttribute("class", "unit");
+            circle.setAttribute("cx", position.x);
+            circle.setAttribute("cy", position.y);
+            circle.setAttribute("r", "8");
+            circle.setAttribute("fill", color || "#ffffff");
+            circle.setAttribute("stroke", "#020617");
+            circle.setAttribute("stroke-width", "2");
+
+            const text = document.createElementNS(
+                "http://www.w3.org/2000/svg",
+                "text"
+            );
+
+            text.setAttribute("class", "unit-label");
+            text.setAttribute("x", position.x);
+            text.setAttribute("y", position.y + 1);
+            text.textContent = label;
+
+            group.appendChild(circle);
+            group.appendChild(text);
+            svg.appendChild(group);
+        });
+    }
+
+    renderHexes();
+    renderUnits();
+</script>
+</body>
+</html>
