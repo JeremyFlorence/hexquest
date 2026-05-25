@@ -1,0 +1,87 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Register - HexQuest</title>
+    <style>
+        body {
+            margin: 0;
+            background: #111827;
+            color: #f9fafb;
+            font-family: Arial, sans-serif;
+        }
+
+        main {
+            max-width: 520px;
+            margin: 0 auto;
+            padding: 48px 24px;
+        }
+
+        .card {
+            background: #020617;
+            border: 1px solid #334155;
+            border-radius: 16px;
+            padding: 32px;
+        }
+
+        label {
+            display: block;
+            margin-top: 16px;
+            margin-bottom: 6px;
+        }
+
+        input {
+            width: 100%;
+            box-sizing: border-box;
+            padding: 10px;
+            border-radius: 8px;
+            border: 1px solid #475569;
+            background: #0f172a;
+            color: #f9fafb;
+        }
+
+        button,
+        a {
+            display: inline-block;
+            margin: 16px 8px 0 0;
+            padding: 10px 16px;
+            border-radius: 10px;
+            background: #2563eb;
+            color: #ffffff;
+            text-decoration: none;
+            border: 0;
+            cursor: pointer;
+            font: inherit;
+        }
+
+        a {
+            background: #475569;
+        }
+
+        .helptext,
+        ul {
+            color: #cbd5e1;
+            font-size: 14px;
+        }
+
+        .errorlist {
+            color: #fca5a5;
+        }
+    </style>
+</head>
+<body>
+<main>
+    <section class="card">
+        <h1>Create an Account</h1>
+
+        <form method="post">
+            {% csrf_token %}
+            {{ form.as_p }}
+
+            <button type="submit">Register</button>
+            <a href="{% url 'login' %}">Already have an account?</a>
+        </form>
+    </section>
+</main>
+</body>
+</html>

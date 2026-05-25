@@ -1,0 +1,115 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>HexQuest</title>
+    <style>
+        body {
+            margin: 0;
+            background: #111827;
+            color: #f9fafb;
+            font-family: Arial, sans-serif;
+        }
+
+        main {
+            max-width: 900px;
+            margin: 0 auto;
+            padding: 48px 24px;
+        }
+
+        .hero {
+            background: #020617;
+            border: 1px solid #334155;
+            border-radius: 16px;
+            padding: 32px;
+        }
+
+        h1 {
+            margin-top: 0;
+            font-size: 40px;
+        }
+
+        a,
+        button {
+            display: inline-block;
+            margin: 8px 8px 8px 0;
+            padding: 10px 16px;
+            border-radius: 10px;
+            background: #2563eb;
+            color: #ffffff;
+            text-decoration: none;
+            border: 0;
+            cursor: pointer;
+            font: inherit;
+        }
+
+        a.secondary {
+            background: #475569;
+        }
+
+        form {
+            display: inline;
+        }
+
+        .games {
+            margin-top: 32px;
+        }
+
+        .game-card {
+            margin: 12px 0;
+            padding: 16px;
+            background: #1f2937;
+            border: 1px solid #334155;
+            border-radius: 12px;
+        }
+
+        .muted {
+            color: #cbd5e1;
+        }
+    </style>
+</head>
+<body>
+<main>
+    <section class="hero">
+        <h1>HexQuest</h1>
+        <p class="muted">Build your nation, explore the hex map, and conquer the world.</p>
+
+        {% if user.is_authenticated %}
+            <h2>Welcome, {{ user.username }}!</h2>
+
+            <a href="{% url 'hexquest:create_game' %}">Create a New Game</a>
+
+            <form action="{% url 'logout' %}" method="post">
+                {% csrf_token %}
+                <button type="submit">Log out</button>
+            </form>
+        {% else %}
+            <a href="{% url 'login' %}">Log in</a>
+            <a class="secondary" href="{% url 'hexquest:register' %}">Registration</a>
+        {% endif %}
+    </section>
+
+    {% if user.is_authenticated %}
+        <section class="games">
+            <h2>Your Games</h2>
+
+            {% if games %}
+                {% for game in games %}
+                    <div class="game-card">
+                        <h3>{{ game.name }}</h3>
+                        <p class="muted">
+                            Turn {{ game.current_turn }} |
+                            Size {{ game.width }}x{{ game.height }} |
+                            Created {{ game.created_at|date:"M j, Y" }}
+                        </p>
+                        <a href="{% url 'hexquest:game_map' game.id %}">Open Game</a>
+                    </div>
+                {% endfor %}
+            {% else %}
+                <p class="muted">You do not have any games yet. Create one to begin.</p>
+            {% endif %}
+        </section>
+    {% endif %}
+</main>
+</body>
+</html>
