@@ -98,11 +98,19 @@
                     <div class="game-card">
                         <h3>{{ game.name }}</h3>
                         <p class="muted">
-                            Turn {{ game.current_turn }} |
-                            Size {{ game.width }}x{{ game.height }} |
+                            {% if game.is_active %}
+                                Turn {{ game.current_turn }} |
+                                Size {{ game.width }}x{{ game.height }} |
+                            {% else %}
+                                <span style="color: #fbbf24;">In Setup</span> |
+                            {% endif %}
                             Created {{ game.created_at|date:"M j, Y" }}
                         </p>
-                        <a href="{% url 'hexquest:game_map' game.id %}">Open Game</a>
+                        {% if game.is_active %}
+                            <a href="{% url 'hexquest:game_map' game.id %}">Open Game</a>
+                        {% else %}
+                            <a href="{% url 'hexquest:game_setup' game.id %}" style="background: #fbbf24; color: #000;">Continue Setup</a>
+                        {% endif %}
                     </div>
                 {% endfor %}
             {% else %}
