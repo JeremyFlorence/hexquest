@@ -3,9 +3,10 @@ from django.contrib.auth.decorators import login_required
 from django.contrib.auth.forms import UserCreationForm
 from django.contrib.auth.models import User
 from django.shortcuts import get_object_or_404, redirect, render
+from django.http import JsonResponse
 from django.utils.crypto import get_random_string
 
-from .models import Game, HexTile, Nation, Unit
+from .models import Game, HexTile, Nation, Unit, ChatMessage
 from .worldgen import generate_world
 
 
@@ -123,7 +124,25 @@ def game_setup(request, game_id):
             generate_world(game, game.width, game.height, game.seed)
             return redirect("hexquest:game_map", game_id=game.id)
 
+        elif action == "update_nation":
+            nation = get_object_or_404(Nation, game=game, player=request.user)
+            nation.name = request.POST.get("nation_name", nation.name)
+            nation.color = request.POST.get("color", nation.color)
+            nation.save()
+            return redirect("hexquest:game_setup", game_id=game.id)
+
+        elif action == "send_chat":
+            text = request.POST.get("text")
+            if text:
+                ChatMessage.objects.create(
+                    game=game,
+                    user=request.user,
+                    text=text
+                )
+            return redirect("hexquest:game_setup", game_id=game.id)
+
     users = User.objects.exclude(id__in=game.nations.values_list("player_id", flat=True))
+    chat_messages = game.chat_messages.all().select_related("user")
     
     return render(
         request,
@@ -132,6 +151,7 @@ def game_setup(request, game_id):
             "game": game,
             "nations": game.nations.all(),
             "available_users": users,
+            "chat_messages": chat_messages,
         },
     )
 
@@ -166,3 +186,41 @@ def game_map(request, game_id):
             "units_by_position": units_by_position,
         },
     )
+
+
+@login_required
+def game_setup_updates(request, game_id):
+    game = get_object_or_404(Game, id=game_id)
+    if not game.nations.filter(player=request.user).exists():
+        return JsonResponse({"error": "Unauthorized"}, status=403)
+
+    last_chat_id = request.GET.get("last_chat_id")
+    
+    chat_qs = game.chat_messages.all()
+    if last_chat_id:
+        chat_qs = chat_qs.filter(id__gt=last_chat_id)
+    
+    messages = [
+        {
+            "id": msg.id,
+            "user": msg.user.username,
+            "text": msg.text,
+            "created_at": msg.created_at.strftime("%H:%M"),
+        }
+        for msg in chat_qs
+    ]
+    
+    nations = [
+        {
+            "player": n.player.username,
+            "name": n.name,
+            "color": n.color,
+        }
+        for n in game.nations.all()
+    ]
+    
+    return JsonResponse({
+        "messages": messages,
+        "nations": nations,
+        "game_active": game.is_active,
+    })
