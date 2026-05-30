@@ -11,6 +11,9 @@ class Game(models.Model):
     width = models.PositiveIntegerField()
     height = models.PositiveIntegerField()
     seed = models.CharField(max_length=64)
+    starting_gold = models.PositiveIntegerField(default=100)
+    starting_food = models.PositiveIntegerField(default=20)
+    starting_settlers = models.PositiveIntegerField(default=1)
     created_at = models.DateTimeField(auto_now_add=True)
     is_active = models.BooleanField(default=True)
 

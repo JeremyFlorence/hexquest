@@ -132,6 +132,9 @@ document.addEventListener('DOMContentLoaded', () => {
     const timerDisplay = document.getElementById('timer-display');
     const turnDisplay = document.getElementById('turn-display');
     const endTurnBtn = document.getElementById('end-turn-btn');
+    const goldDisplay = document.getElementById('gold-display');
+    const foodDisplay = document.getElementById('food-display');
+    const unitsDisplay = document.getElementById('units-display');
 
     // Timer countdown
     setInterval(() => {
@@ -172,6 +175,11 @@ document.addEventListener('DOMContentLoaded', () => {
                     endTurnBtn.textContent = 'End Turn';
                 }
             }
+
+            // Update resources
+            if (goldDisplay) goldDisplay.textContent = data.gold;
+            if (foodDisplay) foodDisplay.textContent = data.food;
+            if (unitsDisplay) unitsDisplay.textContent = data.unit_count;
         } catch (err) {
             console.error("Failed to fetch updates", err);
         }

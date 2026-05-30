@@ -90,11 +90,17 @@ def generate_world(game, width, height, seed):
             start_tile.owner = nation
             start_tile.save()
             
-            # Create a starting settler unit
-            Unit.objects.create(
-                game=game,
-                nation=nation,
-                q=start_tile.q,
-                r=start_tile.r,
-                unit_type="settler"
-            )
+            # Set starting resources
+            nation.gold = game.starting_gold
+            nation.food = game.starting_food
+            nation.save()
+            
+            # Create starting settler units
+            for _ in range(game.starting_settlers):
+                Unit.objects.create(
+                    game=game,
+                    nation=nation,
+                    q=start_tile.q,
+                    r=start_tile.r,
+                    unit_type="settler"
+                )

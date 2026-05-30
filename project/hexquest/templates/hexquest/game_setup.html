@@ -44,6 +44,21 @@
                     <input type="number" id="turn_timer" name="turn_timer" value="{{ game.turn_timer }}" min="10" required>
                 </div>
 
+                <div style="display: flex; gap: 16px;">
+                    <div class="form-group" style="flex: 1;">
+                        <label for="starting_gold">Starting Gold</label>
+                        <input type="number" id="starting_gold" name="starting_gold" value="{{ game.starting_gold }}" min="0" required>
+                    </div>
+                    <div class="form-group" style="flex: 1;">
+                        <label for="starting_food">Starting Food</label>
+                        <input type="number" id="starting_food" name="starting_food" value="{{ game.starting_food }}" min="0" required>
+                    </div>
+                    <div class="form-group" style="flex: 1;">
+                        <label for="starting_settlers">Starting Settlers</label>
+                        <input type="number" id="starting_settlers" name="starting_settlers" value="{{ game.starting_settlers }}" min="1" required>
+                    </div>
+                </div>
+
                 <button type="submit" class="secondary">Save Settings</button>
             </form>
         {% else %}
@@ -52,6 +67,9 @@
                 <p><strong>Map Size:</strong> {{ game.width }} x {{ game.height }}</p>
                 <p><strong>Map Seed:</strong> {{ game.seed }}</p>
                 <p><strong>Turn Timer:</strong> {{ game.turn_timer }} seconds</p>
+                <p><strong>Starting Gold:</strong> {{ game.starting_gold }}</p>
+                <p><strong>Starting Food:</strong> {{ game.starting_food }}</p>
+                <p><strong>Starting Settlers:</strong> {{ game.starting_settlers }}</p>
                 <p class="muted">Only the game creator ({{ game.creator.username }}) can change settings.</p>
             </div>
         {% endif %}

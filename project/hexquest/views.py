@@ -77,8 +77,8 @@ def create_game(request):
         player=request.user,
         name=f"{request.user.username}'s Nation",
         color="#38bdf8",
-        food=10,
-        gold=10,
+        food=game.starting_food,
+        gold=game.starting_gold,
         production=10,
     )
 
@@ -105,6 +105,9 @@ def game_setup(request, game_id):
             game.height = int(request.POST.get("height", game.height))
             game.seed = request.POST.get("seed", game.seed)
             game.turn_timer = int(request.POST.get("turn_timer", game.turn_timer))
+            game.starting_gold = int(request.POST.get("starting_gold", game.starting_gold))
+            game.starting_food = int(request.POST.get("starting_food", game.starting_food))
+            game.starting_settlers = int(request.POST.get("starting_settlers", game.starting_settlers))
             game.save()
             return redirect("hexquest:game_setup", game_id=game.id)
             
@@ -174,6 +177,10 @@ def game_setup(request, game_id):
 def game_map(request, game_id):
     game = get_object_or_404(Game, id=game_id)
     nation = get_object_or_404(Nation, game=game, player=request.user)
+
+    remaining_time = 0
+    if game.turn_end_time:
+        remaining_time = max(0, int((game.turn_end_time - timezone.now()).total_seconds()))
 
     if request.method == "POST":
         action = request.POST.get("action")
@@ -250,6 +257,9 @@ def game_updates(request, game_id):
         "current_turn": game.current_turn,
         "remaining_time": max(0, remaining_time),
         "has_ended_turn": nation.has_ended_turn,
+        "gold": nation.gold,
+        "food": nation.food,
+        "unit_count": nation.units.count(),
     })
 
 
@@ -302,8 +312,8 @@ def accept_invite(request, notification_id):
             player=request.user,
             name=f"{request.user.username}'s Nation",
             color="#f87171",
-            food=10,
-            gold=10,
+            food=game.starting_food,
+            gold=game.starting_gold,
             production=10,
         )
     
