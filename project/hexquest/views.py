@@ -63,6 +63,7 @@ def create_game(request):
 
     game = Game.objects.create(
         name=f"{request.user.username}'s Game {game_number}",
+        creator=request.user,
         width=width,
         height=height,
         seed=seed,
@@ -92,8 +93,11 @@ def game_setup(request, game_id):
 
     if request.method == "POST":
         action = request.POST.get("action")
+        is_creator = game.creator == request.user
         
         if action == "update_settings":
+            if not is_creator:
+                return redirect("hexquest:game_setup", game_id=game.id)
             game.name = request.POST.get("name", game.name)
             game.width = int(request.POST.get("width", game.width))
             game.height = int(request.POST.get("height", game.height))
@@ -102,6 +106,8 @@ def game_setup(request, game_id):
             return redirect("hexquest:game_setup", game_id=game.id)
             
         elif action == "invite_player":
+            if not is_creator:
+                return redirect("hexquest:game_setup", game_id=game.id)
             username = request.POST.get("username")
             try:
                 user_to_invite = User.objects.get(username=username)
@@ -119,6 +125,8 @@ def game_setup(request, game_id):
             return redirect("hexquest:game_setup", game_id=game.id)
 
         elif action == "start_game":
+            if not is_creator:
+                return redirect("hexquest:game_setup", game_id=game.id)
             game.is_active = True
             game.save()
             generate_world(game, game.width, game.height, game.seed)

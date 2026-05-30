@@ -4,6 +4,7 @@ from django.contrib.auth.models import User
 
 class Game(models.Model):
     name = models.CharField(max_length=120)
+    creator = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, related_name="created_games")
     current_turn = models.PositiveIntegerField(default=1)
     width = models.PositiveIntegerField()
     height = models.PositiveIntegerField()

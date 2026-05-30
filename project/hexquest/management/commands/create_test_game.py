@@ -62,6 +62,7 @@ class Command(BaseCommand):
 
         game = Game.objects.create(
             name=name,
+            creator=User.objects.filter(is_superuser=True).first() or User.objects.first(),
             width=width,
             height=height,
             seed=seed,
