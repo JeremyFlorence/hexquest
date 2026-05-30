@@ -5,6 +5,8 @@ from django.contrib.auth.models import User
 from django.shortcuts import get_object_or_404, redirect, render
 from django.http import JsonResponse
 from django.utils.crypto import get_random_string
+from django.utils import timezone
+import datetime
 
 from .models import Game, HexTile, Nation, Unit, ChatMessage, Notification
 from .worldgen import generate_world
@@ -102,6 +104,7 @@ def game_setup(request, game_id):
             game.width = int(request.POST.get("width", game.width))
             game.height = int(request.POST.get("height", game.height))
             game.seed = request.POST.get("seed", game.seed)
+            game.turn_timer = int(request.POST.get("turn_timer", game.turn_timer))
             game.save()
             return redirect("hexquest:game_setup", game_id=game.id)
             
@@ -128,6 +131,9 @@ def game_setup(request, game_id):
             if not is_creator:
                 return redirect("hexquest:game_setup", game_id=game.id)
             game.is_active = True
+            from django.utils import timezone
+            import datetime
+            game.turn_end_time = timezone.now() + datetime.timedelta(seconds=game.turn_timer)
             game.save()
             generate_world(game, game.width, game.height, game.seed)
             return redirect("hexquest:game_map", game_id=game.id)
@@ -164,8 +170,28 @@ def game_setup(request, game_id):
     )
 
 
+@login_required
 def game_map(request, game_id):
     game = get_object_or_404(Game, id=game_id)
+    nation = get_object_or_404(Nation, game=game, player=request.user)
+
+    if request.method == "POST":
+        action = request.POST.get("action")
+        if action == "end_turn":
+            nation.has_ended_turn = True
+            nation.save()
+            
+            # Check if all nations have ended their turn
+            if not game.nations.filter(has_ended_turn=False).exists():
+                process_turn_end(game)
+            
+            return redirect("hexquest:game_map", game_id=game.id)
+
+    # Check if timer has expired
+    if game.turn_end_time and timezone.now() >= game.turn_end_time:
+        process_turn_end(game)
+        # Reload game after turn processing
+        game.refresh_from_db()
 
     hexes = (
         HexTile.objects
@@ -192,8 +218,39 @@ def game_map(request, game_id):
             "game": game,
             "hexes": hexes,
             "units_by_position": units_by_position,
+            "nation": nation,
+            "remaining_time": int((game.turn_end_time - timezone.now()).total_seconds()) if game.turn_end_time else 0
         },
     )
+
+
+def process_turn_end(game):
+    # Here we would execute actions, but for now just advance turn
+    game.current_turn += 1
+    game.turn_end_time = timezone.now() + datetime.timedelta(seconds=game.turn_timer)
+    game.save()
+    
+    # Reset all nations' end turn status
+    game.nations.all().update(has_ended_turn=False)
+
+
+@login_required
+def game_updates(request, game_id):
+    game = get_object_or_404(Game, id=game_id)
+    nation = get_object_or_404(Nation, game=game, player=request.user)
+    
+    # Check if timer has expired
+    if game.turn_end_time and timezone.now() >= game.turn_end_time:
+        process_turn_end(game)
+        game.refresh_from_db()
+
+    remaining_time = int((game.turn_end_time - timezone.now()).total_seconds()) if game.turn_end_time else 0
+    
+    return JsonResponse({
+        "current_turn": game.current_turn,
+        "remaining_time": max(0, remaining_time),
+        "has_ended_turn": nation.has_ended_turn,
+    })
 
 
 @login_required

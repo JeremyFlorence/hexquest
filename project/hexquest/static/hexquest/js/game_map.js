@@ -128,4 +128,55 @@ function renderUnits() {
 document.addEventListener('DOMContentLoaded', () => {
     renderHexes();
     renderUnits();
+
+    const timerDisplay = document.getElementById('timer-display');
+    const turnDisplay = document.getElementById('turn-display');
+    const endTurnBtn = document.getElementById('end-turn-btn');
+
+    // Timer countdown
+    setInterval(() => {
+        if (remainingTime > 0) {
+            remainingTime -= 1;
+            timerDisplay.textContent = remainingTime;
+        } else {
+            // Timer reached zero, turn should advance automatically
+            // We poll frequently so it will catch up
+        }
+    }, 1000);
+
+    async function fetchUpdates() {
+        try {
+            const response = await fetch(gameUpdatesUrl);
+            const data = await response.json();
+
+            // Update remaining time if it's significantly different
+            if (Math.abs(data.remaining_time - remainingTime) > 5) {
+                remainingTime = data.remaining_time;
+                timerDisplay.textContent = remainingTime;
+            }
+
+            // Check if turn advanced
+            if (data.current_turn > currentTurn) {
+                window.location.reload(); // Simplest way to refresh entire state
+                return;
+            }
+
+            // Update button state
+            if (data.has_ended_turn !== hasEndedTurn) {
+                hasEndedTurn = data.has_ended_turn;
+                if (hasEndedTurn) {
+                    endTurnBtn.disabled = true;
+                    endTurnBtn.textContent = 'Waiting...';
+                } else {
+                    endTurnBtn.disabled = false;
+                    endTurnBtn.textContent = 'End Turn';
+                }
+            }
+        } catch (err) {
+            console.error("Failed to fetch updates", err);
+        }
+    }
+
+    // Poll for updates every 2 seconds
+    setInterval(fetchUpdates, 2000);
 });

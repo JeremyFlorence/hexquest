@@ -6,6 +6,8 @@ class Game(models.Model):
     name = models.CharField(max_length=120)
     creator = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, related_name="created_games")
     current_turn = models.PositiveIntegerField(default=1)
+    turn_timer = models.PositiveIntegerField(default=120)  # in seconds
+    turn_end_time = models.DateTimeField(null=True, blank=True)
     width = models.PositiveIntegerField()
     height = models.PositiveIntegerField()
     seed = models.CharField(max_length=64)
@@ -21,6 +23,7 @@ class Nation(models.Model):
     food = models.IntegerField(default=0)
     gold = models.IntegerField(default=0)
     production = models.IntegerField(default=0)
+    has_ended_turn = models.BooleanField(default=False)
 
 
 class HexTile(models.Model):

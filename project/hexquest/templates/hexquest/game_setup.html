@@ -39,6 +39,11 @@
                     <input type="text" id="seed" name="seed" value="{{ game.seed }}" required>
                 </div>
 
+                <div class="form-group">
+                    <label for="turn_timer">Turn Timer (seconds)</label>
+                    <input type="number" id="turn_timer" name="turn_timer" value="{{ game.turn_timer }}" min="10" required>
+                </div>
+
                 <button type="submit" class="secondary">Save Settings</button>
             </form>
         {% else %}
@@ -46,6 +51,7 @@
                 <p><strong>Game Name:</strong> {{ game.name }}</p>
                 <p><strong>Map Size:</strong> {{ game.width }} x {{ game.height }}</p>
                 <p><strong>Map Seed:</strong> {{ game.seed }}</p>
+                <p><strong>Turn Timer:</strong> {{ game.turn_timer }} seconds</p>
                 <p class="muted">Only the game creator ({{ game.creator.username }}) can change settings.</p>
             </div>
         {% endif %}

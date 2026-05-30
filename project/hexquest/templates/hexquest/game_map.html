@@ -11,11 +11,29 @@
 <header>
     <h1>{{ game.name }}</h1>
     <div class="meta">
-        Turn {{ game.current_turn }} |
+        Turn <span id="turn-display">{{ game.current_turn }}</span> |
+        Time: <span id="timer-display">{{ remaining_time }}</span>s |
         Size {{ game.width }}x{{ game.height }} |
         Seed {{ game.seed }}
     </div>
+    <div class="actions">
+        <form id="end-turn-form" method="post">
+            {% csrf_token %}
+            <input type="hidden" name="action" value="end_turn">
+            <button type="submit" id="end-turn-btn" {% if nation.has_ended_turn %}disabled{% endif %}>
+                {% if nation.has_ended_turn %}Waiting...{% else %}End Turn{% endif %}
+            </button>
+        </form>
+    </div>
 </header>
+
+<script>
+    const gameId = {{ game.id }};
+    const gameUpdatesUrl = "{% url 'hexquest:game_updates' game.id %}";
+    let currentTurn = {{ game.current_turn }};
+    let remainingTime = {{ remaining_time }};
+    let hasEndedTurn = {% if nation.has_ended_turn %}true{% else %}false{% endif %};
+</script>
 
 <div class="map-wrap">
     <svg
