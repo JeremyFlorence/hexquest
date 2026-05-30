@@ -142,7 +142,7 @@ def game_map(request, game_id):
     hexes = (
         HexTile.objects
         .filter(game=game)
-        .select_related("owner")
+        .select_related("owner__player")
         .order_by("r", "q")
     )
 

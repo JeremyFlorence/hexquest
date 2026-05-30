@@ -79,12 +79,12 @@
 
             <a href="{% url 'hexquest:create_game' %}">Create a New Game</a>
 
-            <form action="{% url 'logout' %}" method="post">
+            <form action="{% url 'hexquest:logout' %}" method="post">
                 {% csrf_token %}
                 <button type="submit">Log out</button>
             </form>
         {% else %}
-            <a href="{% url 'login' %}">Log in</a>
+            <a href="{% url 'hexquest:login' %}">Log in</a>
             <a class="secondary" href="{% url 'hexquest:register' %}">Registration</a>
         {% endif %}
     </section>

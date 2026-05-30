@@ -19,8 +19,8 @@ def generate_world(game, width, height, seed):
     persistence = 0.5
     lacunarity = 2.0
 
-    elevation_base = random.randint(0, 100000)
-    moisture_base = random.randint(0, 100000)
+    elevation_base = random.randint(0, 1000)
+    moisture_base = random.randint(0, 1000)
 
     tiles = []
 
@@ -71,3 +71,30 @@ def generate_world(game, width, height, seed):
             )
 
     HexTile.objects.bulk_create(tiles)
+
+    # Assign starting positions for nations
+    nations = game.nations.all()
+    available_tiles = list(HexTile.objects.filter(game=game).exclude(terrain=TERRAIN_WATER))
+    
+    if not available_tiles:
+        # Fallback if everything is water (unlikely with noise settings but good for safety)
+        available_tiles = list(HexTile.objects.filter(game=game))
+
+    random.shuffle(available_tiles)
+
+    from .models import Unit
+    
+    for nation in nations:
+        if available_tiles:
+            start_tile = available_tiles.pop()
+            start_tile.owner = nation
+            start_tile.save()
+            
+            # Create a starting settler unit
+            Unit.objects.create(
+                game=game,
+                nation=nation,
+                q=start_tile.q,
+                r=start_tile.r,
+                unit_type="settler"
+            )
