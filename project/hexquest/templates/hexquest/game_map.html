@@ -32,6 +32,8 @@
 <script>
     const gameId = {{ game.id }};
     const gameUpdatesUrl = "{% url 'hexquest:game_updates' game.id %}";
+    const currentUserId = {{ request.user.id }};
+    const csrfToken = "{{ csrf_token }}";
     let currentTurn = {{ game.current_turn }};
     let remainingTime = {{ remaining_time }};
     let hasEndedTurn = {% if nation.has_ended_turn %}true{% else %}false{% endif %};
@@ -58,13 +60,35 @@
         {% for unit in game.units.all %}
             <g
                 class="unit-group"
+                id="unit-{{ unit.id }}"
+                data-id="{{ unit.id }}"
+                data-type="{{ unit.unit_type }}"
                 data-q="{{ unit.q }}"
                 data-r="{{ unit.r }}"
                 data-color="{{ unit.nation.color }}"
+                data-owner-id="{{ unit.nation.player.id }}"
                 data-label="{{ unit.unit_type|slice:':1'|upper }}"
             ></g>
         {% endfor %}
+
+        {% for settlement in game.settlements.all %}
+            <g
+                class="settlement-group"
+                data-id="{{ settlement.id }}"
+                data-q="{{ settlement.q }}"
+                data-r="{{ settlement.r }}"
+                data-color="{{ settlement.nation.color }}"
+                data-name="{{ settlement.name }}"
+                data-tier="{{ settlement.tier }}"
+                data-population="{{ settlement.population }}"
+                data-owner-id="{{ settlement.nation.player.id }}"
+            ></g>
+        {% endfor %}
     </svg>
+    <div id="action-menu" class="action-menu" style="display: none;">
+        <div id="unit-info"></div>
+        <div id="action-buttons"></div>
+    </div>
 </div>
 
 <script src="{% static 'hexquest/js/game_map.js' %}"></script>

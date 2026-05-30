@@ -1,0 +1,50 @@
+from django.test import TestCase, Client
+from django.contrib.auth.models import User
+from hexquest.models import Game, Nation, HexTile, Unit, Settlement
+
+class UnitActionTests(TestCase):
+    def setUp(self):
+        self.user = User.objects.create_user(username="testplayer", password="password")
+        self.client = Client()
+        self.client.login(username="testplayer", password="password")
+        
+        self.game = Game.objects.create(name="Test Game", width=10, height=10, seed="test")
+        self.nation = Nation.objects.create(game=self.game, player=self.user, name="Test Nation", color="#ff0000")
+        
+        # Create some tiles
+        self.tile_0_0 = HexTile.objects.create(game=self.game, q=0, r=0, terrain="plains")
+        self.tile_1_0 = HexTile.objects.create(game=self.game, q=1, r=0, terrain="plains")
+        
+        # Create a unit
+        self.unit = Unit.objects.create(
+            game=self.game, 
+            nation=self.nation, 
+            q=0, 
+            r=0, 
+            unit_type="settler",
+            movement=1
+        )
+
+    def test_move_unit(self):
+        response = self.client.post(f"/games/{self.game.id}/unit/{self.unit.id}/move/", {
+            "q": 1,
+            "r": 0
+        })
+        self.assertEqual(response.status_code, 200)
+        self.unit.refresh_from_db()
+        self.assertEqual(self.unit.q, 1)
+        self.assertEqual(self.unit.r, 0)
+
+    def test_settle_unit(self):
+        # Move back to 0,0 if needed or just use current pos
+        response = self.client.post(f"/games/{self.game.id}/unit/{self.unit.id}/settle/")
+        self.assertEqual(response.status_code, 200)
+        
+        self.tile_0_0.refresh_from_db()
+        self.assertEqual(self.tile_0_0.owner, self.nation)
+        
+        # Settler should be consumed
+        self.assertFalse(Unit.objects.filter(id=self.unit.id).exists())
+
+        # Settlement should be created
+        self.assertTrue(Settlement.objects.filter(game=self.game, q=0, r=0, nation=self.nation).exists())

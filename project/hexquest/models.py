@@ -75,6 +75,25 @@ class Unit(models.Model):
     movement = models.IntegerField(default=2)
 
 
+class Settlement(models.Model):
+    TIERS = [
+        ("village", "Village"),
+        ("town", "Town"),
+        ("city", "City"),
+    ]
+
+    game = models.ForeignKey(Game, on_delete=models.CASCADE, related_name="settlements")
+    nation = models.ForeignKey(Nation, on_delete=models.CASCADE, related_name="settlements")
+    q = models.IntegerField()
+    r = models.IntegerField()
+    name = models.CharField(max_length=120)
+    tier = models.CharField(max_length=20, choices=TIERS, default="village")
+    population = models.PositiveIntegerField(default=1)
+
+    class Meta:
+        unique_together = ("game", "q", "r")
+
+
 class ChatMessage(models.Model):
     game = models.ForeignKey(Game, on_delete=models.CASCADE, related_name="chat_messages")
     user = models.ForeignKey(User, on_delete=models.CASCADE)

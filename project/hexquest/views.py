@@ -1,15 +1,18 @@
+import json
 from django.contrib.auth import login
 from django.contrib.auth.decorators import login_required
 from django.contrib.auth.forms import UserCreationForm
 from django.contrib.auth.models import User
 from django.shortcuts import get_object_or_404, redirect, render
-from django.http import JsonResponse
+from django.http import JsonResponse, HttpResponseForbidden
+from django.db import transaction
 from django.utils.crypto import get_random_string
 from django.utils import timezone
 import datetime
 
-from .models import Game, HexTile, Nation, Unit, ChatMessage, Notification
+from .models import Game, HexTile, Nation, Unit, ChatMessage, Notification, Settlement
 from .worldgen import generate_world
+from project.hexgrid import hex_distance
 
 
 def home(request):
@@ -323,8 +326,111 @@ def accept_invite(request, notification_id):
 
 
 @login_required
+def unit_move(request, game_id, unit_id):
+    if request.method != "POST":
+        return JsonResponse({"error": "Method not allowed"}, status=405)
+
+    unit = get_object_or_404(Unit, id=unit_id, game_id=game_id)
+    if unit.nation.player != request.user:
+        return HttpResponseForbidden("You do not own this unit")
+
+    if unit.nation.has_ended_turn:
+        return JsonResponse({"error": "You have already ended your turn"}, status=400)
+
+    try:
+        q = int(request.POST.get("q"))
+        r = int(request.POST.get("r"))
+    except (TypeError, ValueError):
+        return JsonResponse({"error": "Invalid coordinates"}, status=400)
+
+    # Check distance
+    if hex_distance(unit.q, unit.r, q, r) > unit.movement:
+        return JsonResponse({"error": "Too far to move"}, status=400)
+
+    # Check if tile exists and is not water
+    target_tile = HexTile.objects.filter(game_id=game_id, q=q, r=r).first()
+    if not target_tile or target_tile.terrain == "water":
+        return JsonResponse({"error": "Cannot move there"}, status=400)
+
+    unit.q = q
+    unit.r = r
+    unit.save()
+
+    return JsonResponse({"status": "ok", "q": unit.q, "r": unit.r})
+
+
+@login_required
+def unit_settle(request, game_id, unit_id):
+    if request.method != "POST":
+        return JsonResponse({"error": "Method not allowed"}, status=405)
+
+    unit = get_object_or_404(Unit, id=unit_id, game_id=game_id)
+    if unit.nation.player != request.user:
+        return HttpResponseForbidden("You do not own this unit")
+
+    if unit.nation.has_ended_turn:
+        return JsonResponse({"error": "You have already ended your turn"}, status=400)
+
+    if unit.unit_type != "settler":
+        return JsonResponse({"error": "Only settlers can build settlements"}, status=400)
+
+    tile = HexTile.objects.filter(game_id=game_id, q=unit.q, r=unit.r).first()
+    if not tile:
+        return JsonResponse({"error": "Tile not found"}, status=404)
+
+    if tile.owner:
+        return JsonResponse({"error": "Tile already owned"}, status=400)
+
+    with transaction.atomic():
+        tile.owner = unit.nation
+        tile.save()
+        Settlement.objects.create(
+            game=unit.game,
+            nation=unit.nation,
+            q=unit.q,
+            r=unit.r,
+            name=f"{unit.nation.name} Settlement",
+            tier="village",
+            population=1
+        )
+        unit.delete()
+
+    return JsonResponse({"status": "ok"})
+
+
 def ignore_invite(request, notification_id):
     notification = get_object_or_404(Notification, id=notification_id, user=request.user)
     notification.is_read = True
     notification.save()
     return redirect("hexquest:home")
+
+
+@login_required
+def upgrade_settlement(request, game_id, settlement_id):
+    if request.method != "POST":
+        return JsonResponse({"error": "Method not allowed"}, status=405)
+
+    settlement = get_object_or_404(Settlement, id=settlement_id, game_id=game_id)
+    if settlement.nation.player != request.user:
+        return HttpResponseForbidden("You do not own this settlement")
+
+    if settlement.nation.has_ended_turn:
+        return JsonResponse({"error": "You have already ended your turn"}, status=400)
+
+    # Upgrade logic
+    if settlement.tier == "village":
+        if settlement.population >= 5:
+            settlement.tier = "town"
+            settlement.save()
+            return JsonResponse({"status": "ok", "new_tier": settlement.tier})
+        else:
+            return JsonResponse({"error": "Need at least 5 population to upgrade to Town"}, status=400)
+    elif settlement.tier == "town":
+        if settlement.population >= 15:
+            settlement.tier = "city"
+            settlement.save()
+            return JsonResponse({"status": "ok", "new_tier": settlement.tier})
+        else:
+            return JsonResponse({"error": "Need at least 15 population to upgrade to City"}, status=400)
+    else:
+        return JsonResponse({"error": "Settlement is already at maximum tier"}, status=400)

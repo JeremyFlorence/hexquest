@@ -29,6 +29,7 @@ h1 {
 .map-wrap {
     overflow: auto;
     height: calc(100vh - 82px);
+    position: relative;
 }
 
 svg {
@@ -48,7 +49,17 @@ svg {
 }
 
 .unit {
-    pointer-events: none;
+    pointer-events: visiblePainted;
+    cursor: pointer;
+}
+
+.unit:hover {
+    stroke: #f9fafb;
+    stroke-width: 3;
+}
+
+.settlement {
+    pointer-events: visiblePainted;
 }
 
 .unit-label {
@@ -58,4 +69,52 @@ svg {
     text-anchor: middle;
     dominant-baseline: central;
     pointer-events: none;
+}
+
+.action-menu {
+    position: absolute;
+    background: #1e293b;
+    border: 1px solid #334155;
+    border-radius: 8px;
+    padding: 12px;
+    width: 200px;
+    color: #f8fafc;
+    box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.5);
+    z-index: 50;
+    pointer-events: auto;
+}
+
+.action-menu #unit-info {
+    font-weight: bold;
+    margin-bottom: 8px;
+    border-bottom: 1px solid #334155;
+    padding-bottom: 4px;
+    text-transform: capitalize;
+}
+
+.action-menu button {
+    display: block;
+    width: 100%;
+    padding: 8px;
+    margin-top: 4px;
+    background: #334155;
+    color: #f8fafc;
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+    text-align: left;
+}
+
+.action-menu button:hover {
+    background: #475569;
+}
+
+.action-menu button:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+
+.hex.highlight-move {
+    stroke: #facc15;
+    stroke-width: 2;
 }
