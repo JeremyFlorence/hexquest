@@ -230,45 +230,29 @@ function selectSettlement(group) {
     const population = Number(group.dataset.population);
     const ownerId = Number(group.dataset.ownerId);
     const lastActionTurn = Number(group.dataset.lastActionTurn);
+    const isQueued = group.dataset.queuedAction === "true";
 
     unitInfo.textContent = `${name} (${tier})`;
     actionButtons.innerHTML = "";
 
     if (ownerId === currentUserId && !hasEndedTurn) {
-        if (lastActionTurn === currentTurn) {
+        if (isQueued) {
             const msg = document.createElement("p");
-            msg.textContent = "This settlement has already acted this turn.";
-            msg.style.color = "#ef4444";
+            msg.textContent = "Action already queued for next turn.";
+            msg.style.color = "#8b5cf6";
             msg.style.fontSize = "0.875rem";
             actionButtons.appendChild(msg);
+        } else if (lastActionTurn === currentTurn) {
+            const msg = document.createElement("p");
+            msg.textContent = "Acting again will queue the action for next turn.";
+            msg.style.color = "#f59e0b";
+            msg.style.fontSize = "0.875rem";
+            msg.style.marginBottom = "0.5rem";
+            actionButtons.appendChild(msg);
+            
+            showSettlementActions(id, tier, population, actionButtons);
         } else {
-            let upgradeReq = 0;
-            let nextTier = "";
-
-            if (tier === "village") {
-                upgradeReq = 5;
-                nextTier = "Town";
-            } else if (tier === "town") {
-                upgradeReq = 15;
-                nextTier = "City";
-            }
-
-            if (nextTier) {
-                const upgradeBtn = document.createElement("button");
-                upgradeBtn.textContent = `Upgrade to ${nextTier} (Req: ${upgradeReq} Pop)`;
-                if (population < upgradeReq) {
-                    upgradeBtn.disabled = true;
-                    upgradeBtn.title = `Need ${upgradeReq} population`;
-                }
-                upgradeBtn.onclick = () => upgradeSettlement(id);
-                actionButtons.appendChild(upgradeBtn);
-            }
-
-            // Expand Action
-            const expandBtn = document.createElement("button");
-            expandBtn.textContent = "Expand Territory";
-            expandBtn.onclick = () => showExpandTargets(group);
-            actionButtons.appendChild(expandBtn);
+            showSettlementActions(id, tier, population, actionButtons);
         }
 
         // Rename Action (Rename is usually not considered an 'action' that exhausts turn)
@@ -302,6 +286,36 @@ function selectSettlement(group) {
     actionMenu.style.top = `${top}px`;
 }
 
+function showSettlementActions(id, tier, population, container) {
+    let upgradeReq = 0;
+    let nextTier = "";
+
+    if (tier === "village") {
+        upgradeReq = 5;
+        nextTier = "Town";
+    } else if (tier === "town") {
+        upgradeReq = 15;
+        nextTier = "City";
+    }
+
+    if (nextTier) {
+        const upgradeBtn = document.createElement("button");
+        upgradeBtn.textContent = `Upgrade to ${nextTier} (Req: ${upgradeReq} Pop)`;
+        if (population < upgradeReq) {
+            upgradeBtn.disabled = true;
+            upgradeBtn.title = `Need ${upgradeReq} population`;
+        }
+        upgradeBtn.onclick = () => upgradeSettlement(id);
+        container.appendChild(upgradeBtn);
+    }
+
+    // Expand Action
+    const expandBtn = document.createElement("button");
+    expandBtn.textContent = "Expand Territory";
+    expandBtn.onclick = () => showExpandTargets(selectedUnit);
+    container.appendChild(expandBtn);
+}
+
 async function upgradeSettlement(settlementId) {
     const formData = new FormData();
     formData.append("csrfmiddlewaretoken", csrfToken);
@@ -312,7 +326,7 @@ async function upgradeSettlement(settlementId) {
             body: formData
         });
         const data = await response.json();
-        if (data.status === "ok") {
+        if (data.status === "ok" || data.status === "queued") {
             window.location.reload();
         } else {
             alert(data.error);
@@ -343,31 +357,29 @@ function selectUnit(unitGroup) {
     const r = Number(unitGroup.dataset.r);
     const ownerId = Number(unitGroup.dataset.ownerId);
     const lastActionTurn = Number(unitGroup.dataset.lastActionTurn);
+    const isQueued = unitGroup.dataset.queuedAction === "true";
 
     unitInfo.textContent = type;
     actionButtons.innerHTML = "";
 
     if (ownerId === currentUserId && !hasEndedTurn) {
-        if (lastActionTurn === currentTurn) {
+        if (isQueued) {
             const msg = document.createElement("p");
-            msg.textContent = "This unit has already acted this turn.";
-            msg.style.color = "#ef4444";
+            msg.textContent = "Action already queued for next turn.";
+            msg.style.color = "#8b5cf6";
             msg.style.fontSize = "0.875rem";
             actionButtons.appendChild(msg);
-        } else {
-            // Move Action
-            const moveBtn = document.createElement("button");
-            moveBtn.textContent = "Move";
-            moveBtn.onclick = () => showMoveTargets(unitGroup);
-            actionButtons.appendChild(moveBtn);
+        } else if (lastActionTurn === currentTurn) {
+            const msg = document.createElement("p");
+            msg.textContent = "Acting again will queue the action for next turn.";
+            msg.style.color = "#f59e0b";
+            msg.style.fontSize = "0.875rem";
+            msg.style.marginBottom = "0.5rem";
+            actionButtons.appendChild(msg);
 
-            // Settle Action
-            if (type === "settler") {
-                const settleBtn = document.createElement("button");
-                settleBtn.textContent = "Build Settlement";
-                settleBtn.onclick = () => showNamingModal("Name Your Settlement", "New Settlement", (name) => performSettle(id, name));
-                actionButtons.appendChild(settleBtn);
-            }
+            showUnitActions(id, type, actionButtons);
+        } else {
+            showUnitActions(id, type, actionButtons);
         }
     }
 
@@ -393,6 +405,22 @@ function selectUnit(unitGroup) {
 
     actionMenu.style.left = `${left}px`;
     actionMenu.style.top = `${top}px`;
+}
+
+function showUnitActions(id, type, container) {
+    // Move Action
+    const moveBtn = document.createElement("button");
+    moveBtn.textContent = "Move";
+    moveBtn.onclick = () => showMoveTargets(selectedUnit);
+    container.appendChild(moveBtn);
+
+    // Settle Action
+    if (type === "settler") {
+        const settleBtn = document.createElement("button");
+        settleBtn.textContent = "Build Settlement";
+        settleBtn.onclick = () => showNamingModal("Name Your Settlement", "New Settlement", (name) => performSettle(id, name));
+        container.appendChild(settleBtn);
+    }
 }
 
 function showMoveTargets(unitGroup) {
@@ -470,7 +498,7 @@ async function performExpand(settlementId, q, r) {
             body: formData
         });
         const data = await response.json();
-        if (data.status === "ok") {
+        if (data.status === "ok" || data.status === "queued") {
             window.location.reload();
         } else {
             alert(data.error);
@@ -499,7 +527,7 @@ async function performMove(unitId, q, r) {
             body: formData
         });
         const data = await response.json();
-        if (data.status === "ok") {
+        if (data.status === "ok" || data.status === "queued") {
             window.location.reload();
         } else {
             alert(data.error);
@@ -520,7 +548,7 @@ async function performSettle(unitId, name) {
             body: formData
         });
         const data = await response.json();
-        if (data.status === "ok") {
+        if (data.status === "ok" || data.status === "queued") {
             window.location.reload();
         } else {
             alert(data.error);
@@ -584,7 +612,7 @@ async function performRename(settlementId, newName) {
             body: formData
         });
         const data = await response.json();
-        if (data.status === "ok") {
+        if (data.status === "ok" || data.status === "queued") {
             window.location.reload();
         } else {
             alert(data.error);

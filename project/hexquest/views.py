@@ -243,6 +243,87 @@ def process_turn_end(game):
     # Reset all nations' end turn status
     game.nations.all().update(has_ended_turn=False)
 
+    # Process queued actions for units
+    units_with_queued = list(game.units.exclude(queued_action__isnull=True))
+    for unit in units_with_queued:
+        action = unit.queued_action
+        unit.queued_action = None
+        
+        if action['type'] == 'move':
+            q, r = action['q'], action['r']
+            if hex_distance(unit.q, unit.r, q, r) <= unit.movement:
+                target_tile = HexTile.objects.filter(game=game, q=q, r=r).first()
+                if target_tile and target_tile.terrain != "water":
+                    unit.q = q
+                    unit.r = r
+                    unit.last_action_turn = game.current_turn
+        
+        elif action['type'] == 'settle':
+            name = action['name']
+            tile = HexTile.objects.filter(game=game, q=unit.q, r=unit.r).first()
+            if tile and not tile.owner and unit.unit_type == 'settler':
+                with transaction.atomic():
+                    settlement = Settlement.objects.create(
+                        game=game,
+                        nation=unit.nation,
+                        q=unit.q,
+                        r=unit.r,
+                        name=name,
+                        tier="village",
+                        population=1,
+                        last_action_turn=game.current_turn
+                    )
+                    tile.owner = unit.nation
+                    tile.settlement = settlement
+                    tile.save()
+                    from project.hexgrid import hex_neighbors
+                    for n_q, n_r in hex_neighbors(tile.q, tile.r):
+                        adj_tile = HexTile.objects.filter(game=game, q=n_q, r=n_r).first()
+                        if adj_tile and not adj_tile.owner and adj_tile.terrain != "water":
+                            adj_tile.owner = unit.nation
+                            adj_tile.settlement = settlement
+                            adj_tile.save()
+                    unit.delete()
+                    continue # Unit deleted, don't save
+        unit.save()
+
+    # Process queued actions for settlements
+    settlements_with_queued = list(game.settlements.exclude(queued_action__isnull=True))
+    for settlement in settlements_with_queued:
+        action = settlement.queued_action
+        settlement.queued_action = None
+        
+        if action['type'] == 'upgrade':
+            if settlement.tier == "village" and settlement.population >= 5:
+                settlement.tier = "town"
+                settlement.last_action_turn = game.current_turn
+            elif settlement.tier == "town" and settlement.population >= 15:
+                settlement.tier = "city"
+                settlement.last_action_turn = game.current_turn
+        
+        elif action['type'] == 'expand':
+            q, r = action['q'], action['r']
+            target_tile = HexTile.objects.filter(game=game, q=q, r=r).first()
+            if target_tile and not target_tile.owner and target_tile.terrain != "water":
+                is_adjacent = False
+                owned_tiles = HexTile.objects.filter(game=game, settlement=settlement)
+                for tile in owned_tiles:
+                    if hex_distance(tile.q, tile.r, q, r) == 1:
+                        is_adjacent = True
+                        break
+                if is_adjacent:
+                    owned_tiles_count = HexTile.objects.filter(game=game, owner=settlement.nation).count()
+                    cost = 10 + (owned_tiles_count * 5)
+                    if settlement.nation.gold >= cost:
+                        with transaction.atomic():
+                            settlement.nation.gold -= cost
+                            settlement.nation.save()
+                            target_tile.owner = settlement.nation
+                            target_tile.settlement = settlement
+                            target_tile.save()
+                            settlement.last_action_turn = game.current_turn
+        settlement.save()
+
 
 @login_required
 def game_updates(request, game_id):
@@ -338,7 +419,14 @@ def unit_move(request, game_id, unit_id):
         return JsonResponse({"error": "You have already ended your turn"}, status=400)
 
     if unit.last_action_turn == unit.game.current_turn:
-        return JsonResponse({"error": "This unit has already acted this turn"}, status=400)
+        try:
+            q = int(request.POST.get("q"))
+            r = int(request.POST.get("r"))
+        except (TypeError, ValueError):
+            return JsonResponse({"error": "Invalid coordinates"}, status=400)
+        unit.queued_action = {"type": "move", "q": q, "r": r}
+        unit.save()
+        return JsonResponse({"status": "queued", "message": "Action queued for next turn"})
 
     try:
         q = int(request.POST.get("q"))
@@ -376,7 +464,12 @@ def unit_settle(request, game_id, unit_id):
         return JsonResponse({"error": "You have already ended your turn"}, status=400)
 
     if unit.last_action_turn == unit.game.current_turn:
-        return JsonResponse({"error": "This unit has already acted this turn"}, status=400)
+        name = request.POST.get("name")
+        if not name:
+            return JsonResponse({"error": "Settlement name is required"}, status=400)
+        unit.queued_action = {"type": "settle", "name": name}
+        unit.save()
+        return JsonResponse({"status": "queued", "message": "Action queued for next turn"})
 
     if unit.unit_type != "settler":
         return JsonResponse({"error": "Only settlers can build settlements"}, status=400)
@@ -460,7 +553,9 @@ def upgrade_settlement(request, game_id, settlement_id):
         return JsonResponse({"error": "You have already ended your turn"}, status=400)
 
     if settlement.last_action_turn == settlement.game.current_turn:
-        return JsonResponse({"error": "This settlement has already acted this turn"}, status=400)
+        settlement.queued_action = {"type": "upgrade"}
+        settlement.save()
+        return JsonResponse({"status": "queued", "message": "Action queued for next turn"})
 
     # Upgrade logic
     if settlement.tier == "village":
@@ -496,7 +591,14 @@ def expand_settlement(request, game_id, settlement_id):
         return JsonResponse({"error": "You have already ended your turn"}, status=400)
 
     if settlement.last_action_turn == settlement.game.current_turn:
-        return JsonResponse({"error": "This settlement has already acted this turn"}, status=400)
+        try:
+            q = int(request.POST.get("q"))
+            r = int(request.POST.get("r"))
+        except (TypeError, ValueError):
+            return JsonResponse({"error": "Invalid coordinates"}, status=400)
+        settlement.queued_action = {"type": "expand", "q": q, "r": r}
+        settlement.save()
+        return JsonResponse({"status": "queued", "message": "Action queued for next turn"})
 
     try:
         q = int(request.POST.get("q"))

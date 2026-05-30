@@ -71,6 +71,7 @@
                 data-color="{{ unit.nation.color }}"
                 data-owner-id="{{ unit.nation.player.id }}"
                 data-last-action-turn="{{ unit.last_action_turn }}"
+                data-queued-action="{% if unit.queued_action %}true{% else %}false{% endif %}"
                 data-label="{{ unit.unit_type|slice:':1'|upper }}"
             ></g>
         {% endfor %}
@@ -86,6 +87,7 @@
                 data-tier="{{ settlement.tier }}"
                 data-population="{{ settlement.population }}"
                 data-last-action-turn="{{ settlement.last_action_turn }}"
+                data-queued-action="{% if settlement.queued_action %}true{% else %}false{% endif %}"
                 data-owner-id="{{ settlement.nation.player.id }}"
             ></g>
         {% endfor %}
