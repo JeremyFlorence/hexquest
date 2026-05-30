@@ -51,6 +51,10 @@ document.addEventListener('DOMContentLoaded', () => {
     async function fetchUpdates() {
         try {
             const response = await fetch(`updates/?last_chat_id=${lastChatId}`);
+            if (response.status === 404) {
+                window.location.href = "/?abandoned=1";
+                return;
+            }
             const data = await response.json();
 
             if (data.game_active) {

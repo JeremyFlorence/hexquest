@@ -8,6 +8,16 @@
 </head>
 <body>
 <main>
+    {% if messages %}
+        <div class="messages" style="margin-bottom: 24px;">
+            {% for message in messages %}
+                <div class="message {{ message.tags }}" style="padding: 12px; border-radius: 8px; background: {% if message.tags == 'success' %}#065f46{% elif message.tags == 'danger' or message.tags == 'error' %}#991b1b{% else %}#1e293b{% endif %}; border: 1px solid {% if message.tags == 'success' %}#059669{% elif message.tags == 'danger' or message.tags == 'error' %}#dc2626{% else %}#334155{% endif %}; margin-bottom: 8px;">
+                    {{ message }}
+                </div>
+            {% endfor %}
+        </div>
+    {% endif %}
+
     <section class="hero">
         <h1>HexQuest</h1>
         <p class="muted">Build your nation, explore the hex map, and conquer the world.</p>
@@ -17,6 +27,7 @@
 
             <div class="hero-actions">
                 <a href="{% url 'hexquest:create_game' %}">Create a New Game</a>
+                <a href="{% url 'hexquest:game_history' %}" class="secondary">Game History</a>
 
                 <form action="{% url 'hexquest:logout' %}" method="post">
                     {% csrf_token %}

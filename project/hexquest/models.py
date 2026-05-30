@@ -16,6 +16,9 @@ class Game(models.Model):
     starting_settlers = models.PositiveIntegerField(default=1)
     created_at = models.DateTimeField(auto_now_add=True)
     is_active = models.BooleanField(default=True)
+    is_finished = models.BooleanField(default=False)
+    is_abandoned = models.BooleanField(default=False)
+    last_activity_turn = models.PositiveIntegerField(default=1)
 
 
 class Nation(models.Model):

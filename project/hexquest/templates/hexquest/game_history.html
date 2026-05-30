@@ -1,0 +1,99 @@
+{% load static %}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Game History - HexQuest</title>
+    <link rel="stylesheet" href="{% static 'hexquest/css/base.css' %}">
+    <style>
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+            gap: 16px;
+            margin-top: 16px;
+        }
+        .stat-item {
+            background: rgba(255, 255, 255, 0.05);
+            padding: 12px;
+            border-radius: 8px;
+        }
+        .stat-label {
+            font-size: 0.8rem;
+            color: #94a3b8;
+            display: block;
+        }
+        .stat-value {
+            font-size: 1.2rem;
+            font-weight: bold;
+            color: #f8fafc;
+        }
+        .nation-row {
+            border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+            padding: 8px 0;
+        }
+        .nation-row:last-child {
+            border-bottom: none;
+        }
+    </style>
+</head>
+<body>
+<main>
+    <section class="hero">
+        <h1>Game History</h1>
+        <p class="muted">Review your past conquests and statistics.</p>
+        <div class="hero-actions">
+            <a href="{% url 'hexquest:home' %}">Back to Home</a>
+        </div>
+    </section>
+
+    <section class="games">
+        {% if games %}
+            {% for game in games %}
+                <div class="game-card" style="margin-bottom: 32px;">
+                    <div style="display: flex; justify-content: space-between; align-items: flex-start;">
+                        <div>
+                            <h3>{{ game.name }}</h3>
+                            <p class="muted">
+                                Finished at Turn {{ game.current_turn }} |
+                                Size {{ game.width }}x{{ game.height }} |
+                                Created {{ game.created_at|date:"M j, Y" }}
+                            </p>
+                        </div>
+                    </div>
+
+                    <div class="stats-grid">
+                        {% for nation in game.nations.all %}
+                            <div class="stat-item" style="border-left: 4px solid {{ nation.color }};">
+                                <span class="stat-label">{{ nation.name }} ({{ nation.player.username }})</span>
+                                <div style="display: flex; gap: 16px; margin-top: 4px;">
+                                    <div>
+                                        <span class="stat-label">Gold</span>
+                                        <span class="stat-value">{{ nation.gold }}</span>
+                                    </div>
+                                    <div>
+                                        <span class="stat-label">Food</span>
+                                        <span class="stat-value">{{ nation.food }}</span>
+                                    </div>
+                                </div>
+                                <div style="display: flex; gap: 16px; margin-top: 8px;">
+                                    <div>
+                                        <span class="stat-label">Settlements</span>
+                                        <span class="stat-value">{{ nation.settlements.count }}</span>
+                                    </div>
+                                    <div>
+                                        <span class="stat-label">Units</span>
+                                        <span class="stat-value">{{ nation.units.count }}</span>
+                                    </div>
+                                </div>
+                            </div>
+                        {% endfor %}
+                    </div>
+                </div>
+            {% endfor %}
+        {% else %}
+            <p class="muted">No finished games found.</p>
+        {% endif %}
+    </section>
+</main>
+</body>
+</html>

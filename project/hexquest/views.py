@@ -1,4 +1,5 @@
 import json
+from django.contrib import messages
 from django.contrib.auth import login
 from django.contrib.auth.decorators import login_required
 from django.contrib.auth.forms import UserCreationForm
@@ -16,12 +17,15 @@ from project.hexgrid import hex_distance
 
 
 def home(request):
+    if request.GET.get("abandoned"):
+        messages.warning(request, "The game creator has abandoned the game.")
+
     games = []
 
     if request.user.is_authenticated:
         games = (
             Game.objects
-            .filter(nations__player=request.user)
+            .filter(nations__player=request.user, is_finished=False)
             .distinct()
             .order_by("-created_at")
         )
@@ -34,6 +38,18 @@ def home(request):
             "notifications": request.user.notifications.filter(is_read=False) if request.user.is_authenticated else [],
         },
     )
+
+
+@login_required
+def game_history(request):
+    games = (
+        Game.objects
+        .filter(nations__player=request.user, is_finished=True)
+        .prefetch_related('nations', 'units', 'settlements')
+        .distinct()
+        .order_by("-created_at")
+    )
+    return render(request, "hexquest/game_history.html", {"games": games})
 
 
 def register(request):
@@ -144,6 +160,15 @@ def game_setup(request, game_id):
             generate_world(game, game.width, game.height, game.seed)
             return redirect("hexquest:game_map", game_id=game.id)
 
+        elif action == "abandon_game":
+            if not is_creator:
+                return redirect("hexquest:game_setup", game_id=game.id)
+            game.is_abandoned = True
+            game.save()
+            game.delete()
+            messages.success(request, "Game abandoned and deleted.")
+            return redirect("hexquest:home")
+
         elif action == "update_nation":
             nation = get_object_or_404(Nation, game=game, player=request.user)
             nation.name = request.POST.get("nation_name", nation.name)
@@ -179,6 +204,8 @@ def game_setup(request, game_id):
 @login_required
 def game_map(request, game_id):
     game = get_object_or_404(Game, id=game_id)
+    if game.is_finished:
+        return redirect("hexquest:game_history")
     nation = get_object_or_404(Nation, game=game, player=request.user)
 
     remaining_time = 0
@@ -235,17 +262,16 @@ def game_map(request, game_id):
 
 
 def process_turn_end(game):
-    # Here we would execute actions, but for now just advance turn
-    game.current_turn += 1
-    game.turn_end_time = timezone.now() + datetime.timedelta(seconds=game.turn_timer)
-    game.save()
-    
-    # Reset all nations' end turn status
-    game.nations.all().update(has_ended_turn=False)
+    if game.is_finished:
+        return
+
+    # Check for activity in this turn
+    activity_occurred = False
 
     # Process queued actions for units
     units_with_queued = list(game.units.exclude(queued_action__isnull=True))
     for unit in units_with_queued:
+        activity_occurred = True
         action = unit.queued_action
         unit.queued_action = None
         
@@ -290,6 +316,7 @@ def process_turn_end(game):
     # Process queued actions for settlements
     settlements_with_queued = list(game.settlements.exclude(queued_action__isnull=True))
     for settlement in settlements_with_queued:
+        activity_occurred = True
         action = settlement.queued_action
         settlement.queued_action = None
         
@@ -323,6 +350,21 @@ def process_turn_end(game):
                             target_tile.save()
                             settlement.last_action_turn = game.current_turn
         settlement.save()
+
+    if activity_occurred:
+        game.last_activity_turn = game.current_turn
+        game.save()
+
+    # Check for game end condition (3 turns without activity)
+    if game.current_turn - game.last_activity_turn >= 3:
+        game.is_finished = True
+
+    game.current_turn += 1
+    game.turn_end_time = timezone.now() + datetime.timedelta(seconds=game.turn_timer)
+    game.save()
+    
+    # Reset all nations' end turn status
+    game.nations.all().update(has_ended_turn=False)
 
 
 @login_required

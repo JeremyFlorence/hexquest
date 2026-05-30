@@ -31,6 +31,14 @@ a.secondary, button.secondary {
     background: #475569;
 }
 
+button.success {
+    background: #16a34a;
+}
+
+button.danger {
+    background: #dc2626;
+}
+
 .muted {
     color: #cbd5e1;
 }
