@@ -56,6 +56,7 @@
                 data-owner-id="{% if hex.owner %}{{ hex.owner.player.id }}{% endif %}"
                 data-owner-color="{% if hex.owner %}{{ hex.owner.color }}{% endif %}"
                 data-settlement="{% if hex.settlement %}{{ hex.settlement.name }}{% endif %}"
+                data-settlement-id="{% if hex.settlement %}{{ hex.settlement.id }}{% endif %}"
             ></g>
         {% endfor %}
 
@@ -69,6 +70,7 @@
                 data-r="{{ unit.r }}"
                 data-color="{{ unit.nation.color }}"
                 data-owner-id="{{ unit.nation.player.id }}"
+                data-last-action-turn="{{ unit.last_action_turn }}"
                 data-label="{{ unit.unit_type|slice:':1'|upper }}"
             ></g>
         {% endfor %}
@@ -83,6 +85,7 @@
                 data-name="{{ settlement.name }}"
                 data-tier="{{ settlement.tier }}"
                 data-population="{{ settlement.population }}"
+                data-last-action-turn="{{ settlement.last_action_turn }}"
                 data-owner-id="{{ settlement.nation.player.id }}"
             ></g>
         {% endfor %}

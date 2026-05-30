@@ -229,40 +229,49 @@ function selectSettlement(group) {
     const tier = group.dataset.tier;
     const population = Number(group.dataset.population);
     const ownerId = Number(group.dataset.ownerId);
+    const lastActionTurn = Number(group.dataset.lastActionTurn);
 
     unitInfo.textContent = `${name} (${tier})`;
     actionButtons.innerHTML = "";
 
     if (ownerId === currentUserId && !hasEndedTurn) {
-        let upgradeReq = 0;
-        let nextTier = "";
+        if (lastActionTurn === currentTurn) {
+            const msg = document.createElement("p");
+            msg.textContent = "This settlement has already acted this turn.";
+            msg.style.color = "#ef4444";
+            msg.style.fontSize = "0.875rem";
+            actionButtons.appendChild(msg);
+        } else {
+            let upgradeReq = 0;
+            let nextTier = "";
 
-        if (tier === "village") {
-            upgradeReq = 5;
-            nextTier = "Town";
-        } else if (tier === "town") {
-            upgradeReq = 15;
-            nextTier = "City";
-        }
-
-        if (nextTier) {
-            const upgradeBtn = document.createElement("button");
-            upgradeBtn.textContent = `Upgrade to ${nextTier} (Req: ${upgradeReq} Pop)`;
-            if (population < upgradeReq) {
-                upgradeBtn.disabled = true;
-                upgradeBtn.title = `Need ${upgradeReq} population`;
+            if (tier === "village") {
+                upgradeReq = 5;
+                nextTier = "Town";
+            } else if (tier === "town") {
+                upgradeReq = 15;
+                nextTier = "City";
             }
-            upgradeBtn.onclick = () => upgradeSettlement(id);
-            actionButtons.appendChild(upgradeBtn);
+
+            if (nextTier) {
+                const upgradeBtn = document.createElement("button");
+                upgradeBtn.textContent = `Upgrade to ${nextTier} (Req: ${upgradeReq} Pop)`;
+                if (population < upgradeReq) {
+                    upgradeBtn.disabled = true;
+                    upgradeBtn.title = `Need ${upgradeReq} population`;
+                }
+                upgradeBtn.onclick = () => upgradeSettlement(id);
+                actionButtons.appendChild(upgradeBtn);
+            }
+
+            // Expand Action
+            const expandBtn = document.createElement("button");
+            expandBtn.textContent = "Expand Territory";
+            expandBtn.onclick = () => showExpandTargets(group);
+            actionButtons.appendChild(expandBtn);
         }
 
-        // Expand Action
-        const expandBtn = document.createElement("button");
-        expandBtn.textContent = "Expand Territory";
-        expandBtn.onclick = () => showExpandTargets(group);
-        actionButtons.appendChild(expandBtn);
-
-        // Rename Action
+        // Rename Action (Rename is usually not considered an 'action' that exhausts turn)
         const renameBtn = document.createElement("button");
         renameBtn.textContent = "Rename Settlement";
         renameBtn.onclick = () => showNamingModal("Rename Settlement", name, (newName) => performRename(id, newName));
@@ -333,23 +342,32 @@ function selectUnit(unitGroup) {
     const q = Number(unitGroup.dataset.q);
     const r = Number(unitGroup.dataset.r);
     const ownerId = Number(unitGroup.dataset.ownerId);
+    const lastActionTurn = Number(unitGroup.dataset.lastActionTurn);
 
     unitInfo.textContent = type;
     actionButtons.innerHTML = "";
 
     if (ownerId === currentUserId && !hasEndedTurn) {
-        // Move Action
-        const moveBtn = document.createElement("button");
-        moveBtn.textContent = "Move";
-        moveBtn.onclick = () => showMoveTargets(unitGroup);
-        actionButtons.appendChild(moveBtn);
+        if (lastActionTurn === currentTurn) {
+            const msg = document.createElement("p");
+            msg.textContent = "This unit has already acted this turn.";
+            msg.style.color = "#ef4444";
+            msg.style.fontSize = "0.875rem";
+            actionButtons.appendChild(msg);
+        } else {
+            // Move Action
+            const moveBtn = document.createElement("button");
+            moveBtn.textContent = "Move";
+            moveBtn.onclick = () => showMoveTargets(unitGroup);
+            actionButtons.appendChild(moveBtn);
 
-        // Settle Action
-        if (type === "settler") {
-            const settleBtn = document.createElement("button");
-            settleBtn.textContent = "Build Settlement";
-            settleBtn.onclick = () => showNamingModal("Name Your Settlement", "New Settlement", (name) => performSettle(id, name));
-            actionButtons.appendChild(settleBtn);
+            // Settle Action
+            if (type === "settler") {
+                const settleBtn = document.createElement("button");
+                settleBtn.textContent = "Build Settlement";
+                settleBtn.onclick = () => showNamingModal("Name Your Settlement", "New Settlement", (name) => performSettle(id, name));
+                actionButtons.appendChild(settleBtn);
+            }
         }
     }
 
@@ -402,28 +420,41 @@ function showMoveTargets(unitGroup) {
 
 function showExpandTargets(settlementGroup) {
     clearHighlights();
-    const q = Number(settlementGroup.dataset.q);
-    const r = Number(settlementGroup.dataset.r);
     const settlementId = settlementGroup.dataset.id;
 
+    // Find all hexes belonging to this settlement
+    const ownedHexes = document.querySelectorAll(`.hex-group[data-settlement-id="${settlementId}"]`);
+    
     const neighbors = [
         [1, 0], [1, -1], [0, -1], [-1, 0], [-1, 1], [0, 1]
     ];
 
-    neighbors.forEach(([dq, dr]) => {
-        const targetQ = q + dq;
-        const targetR = r + dr;
-        const hex = document.querySelector(`.hex-group[data-q="${targetQ}"][data-r="${targetR}"] .hex`);
-        if (hex) {
-            const group = hex.parentElement;
-            const terrain = group.dataset.terrain;
-            const ownerId = group.dataset.ownerId;
+    const targets = new Set();
+
+    ownedHexes.forEach(ownedGroup => {
+        const q = Number(ownedGroup.dataset.q);
+        const r = Number(ownedGroup.dataset.r);
+
+        neighbors.forEach(([dq, dr]) => {
+            const targetQ = q + dq;
+            const targetR = r + dr;
+            const targetKey = `${targetQ},${targetR}`;
             
-            if (terrain !== "water" && !ownerId) {
-                hex.classList.add("highlight-move"); // Reuse highlight-move class for simplicity
-                hex.onclick = () => performExpand(settlementId, targetQ, targetR);
+            if (!targets.has(targetKey)) {
+                const hex = document.querySelector(`.hex-group[data-q="${targetQ}"][data-r="${targetR}"] .hex`);
+                if (hex) {
+                    const group = hex.parentElement;
+                    const terrain = group.dataset.terrain;
+                    const ownerId = group.dataset.ownerId;
+                    
+                    if (terrain !== "water" && !ownerId) {
+                        hex.classList.add("highlight-move");
+                        hex.onclick = () => performExpand(settlementId, targetQ, targetR);
+                        targets.add(targetKey);
+                    }
+                }
             }
-        }
+        });
     });
 }
 

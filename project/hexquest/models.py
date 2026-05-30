@@ -80,6 +80,7 @@ class Unit(models.Model):
     unit_type = models.CharField(max_length=20, choices=UNIT_TYPES)
     strength = models.IntegerField(default=10)
     movement = models.IntegerField(default=2)
+    last_action_turn = models.PositiveIntegerField(default=0)
 
 
 class Settlement(models.Model):
@@ -96,6 +97,7 @@ class Settlement(models.Model):
     name = models.CharField(max_length=120)
     tier = models.CharField(max_length=20, choices=TIERS, default="village")
     population = models.PositiveIntegerField(default=1)
+    last_action_turn = models.PositiveIntegerField(default=0)
 
     class Meta:
         unique_together = ("game", "q", "r")

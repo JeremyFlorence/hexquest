@@ -337,6 +337,9 @@ def unit_move(request, game_id, unit_id):
     if unit.nation.has_ended_turn:
         return JsonResponse({"error": "You have already ended your turn"}, status=400)
 
+    if unit.last_action_turn == unit.game.current_turn:
+        return JsonResponse({"error": "This unit has already acted this turn"}, status=400)
+
     try:
         q = int(request.POST.get("q"))
         r = int(request.POST.get("r"))
@@ -354,6 +357,7 @@ def unit_move(request, game_id, unit_id):
 
     unit.q = q
     unit.r = r
+    unit.last_action_turn = unit.game.current_turn
     unit.save()
 
     return JsonResponse({"status": "ok", "q": unit.q, "r": unit.r})
@@ -370,6 +374,9 @@ def unit_settle(request, game_id, unit_id):
 
     if unit.nation.has_ended_turn:
         return JsonResponse({"error": "You have already ended your turn"}, status=400)
+
+    if unit.last_action_turn == unit.game.current_turn:
+        return JsonResponse({"error": "This unit has already acted this turn"}, status=400)
 
     if unit.unit_type != "settler":
         return JsonResponse({"error": "Only settlers can build settlements"}, status=400)
@@ -452,10 +459,14 @@ def upgrade_settlement(request, game_id, settlement_id):
     if settlement.nation.has_ended_turn:
         return JsonResponse({"error": "You have already ended your turn"}, status=400)
 
+    if settlement.last_action_turn == settlement.game.current_turn:
+        return JsonResponse({"error": "This settlement has already acted this turn"}, status=400)
+
     # Upgrade logic
     if settlement.tier == "village":
         if settlement.population >= 5:
             settlement.tier = "town"
+            settlement.last_action_turn = settlement.game.current_turn
             settlement.save()
             return JsonResponse({"status": "ok", "new_tier": settlement.tier})
         else:
@@ -463,6 +474,7 @@ def upgrade_settlement(request, game_id, settlement_id):
     elif settlement.tier == "town":
         if settlement.population >= 15:
             settlement.tier = "city"
+            settlement.last_action_turn = settlement.game.current_turn
             settlement.save()
             return JsonResponse({"status": "ok", "new_tier": settlement.tier})
         else:
@@ -483,16 +495,26 @@ def expand_settlement(request, game_id, settlement_id):
     if settlement.nation.has_ended_turn:
         return JsonResponse({"error": "You have already ended your turn"}, status=400)
 
+    if settlement.last_action_turn == settlement.game.current_turn:
+        return JsonResponse({"error": "This settlement has already acted this turn"}, status=400)
+
     try:
         q = int(request.POST.get("q"))
         r = int(request.POST.get("r"))
     except (TypeError, ValueError):
         return JsonResponse({"error": "Invalid coordinates"}, status=400)
 
-    # Check if tile is adjacent to the settlement
+    # Check if tile is adjacent to any tile belonging to the settlement
     from project.hexgrid import hex_distance
-    if hex_distance(settlement.q, settlement.r, q, r) != 1:
-        return JsonResponse({"error": "Tile must be adjacent to the settlement"}, status=400)
+    is_adjacent = False
+    owned_tiles = HexTile.objects.filter(game_id=game_id, settlement=settlement)
+    for tile in owned_tiles:
+        if hex_distance(tile.q, tile.r, q, r) == 1:
+            is_adjacent = True
+            break
+            
+    if not is_adjacent:
+        return JsonResponse({"error": "Tile must be adjacent to the settlement territory"}, status=400)
 
     # Check if tile is valid and unowned
     target_tile = HexTile.objects.filter(game_id=game_id, q=q, r=r).first()
@@ -514,5 +536,7 @@ def expand_settlement(request, game_id, settlement_id):
         target_tile.owner = settlement.nation
         target_tile.settlement = settlement
         target_tile.save()
+        settlement.last_action_turn = settlement.game.current_turn
+        settlement.save()
 
     return JsonResponse({"status": "ok", "cost": cost})

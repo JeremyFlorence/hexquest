@@ -89,29 +89,6 @@ def generate_world(game, width, height, seed):
         if available_tiles:
             start_tile = available_tiles.pop()
             
-            # Create initial settlement
-            settlement = Settlement.objects.create(
-                game=game,
-                nation=nation,
-                q=start_tile.q,
-                r=start_tile.r,
-                name=f"{nation.name} Capital",
-                tier="village",
-                population=1
-            )
-            
-            start_tile.owner = nation
-            start_tile.settlement = settlement
-            start_tile.save()
-
-            # Assign all adjacent tiles to the nation
-            for n_q, n_r in hex_neighbors(start_tile.q, start_tile.r):
-                adj_tile = HexTile.objects.filter(game=game, q=n_q, r=n_r).first()
-                if adj_tile and adj_tile.terrain != TERRAIN_WATER:
-                    adj_tile.owner = nation
-                    adj_tile.settlement = settlement
-                    adj_tile.save()
-            
             # Re-fetch nation to avoid stale data if needed
             nation.refresh_from_db()
 

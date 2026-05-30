@@ -26,7 +26,7 @@ class SettlementTierTests(TestCase):
 
     def test_initial_settlement_is_village(self):
         """Test that a new settlement starts as a Village."""
-        self.client.post(reverse('hexquest:unit_settle', kwargs={'game_id': self.game.id, 'unit_id': self.unit.id}))
+        self.client.post(reverse('hexquest:unit_settle', kwargs={'game_id': self.game.id, 'unit_id': self.unit.id}), {'name': 'New City'})
         
         settlement = Settlement.objects.get(game=self.game, q=0, r=0)
         self.assertEqual(settlement.tier, "village")

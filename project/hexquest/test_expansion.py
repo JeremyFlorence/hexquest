@@ -19,25 +19,23 @@ class SettlementExpansionTests(TestCase):
         )
         
     def test_worldgen_initial_territory(self):
-        """Test that worldgen assigns adjacent tiles to the nation."""
+        """Test that worldgen DOES NOT assign initial territory or settlements anymore."""
         generate_world(self.game, 10, 10, "test")
         
         # There should be exactly one nation in this test
         self.assertEqual(self.game.nations.count(), 1)
         nation = self.game.nations.first()
         
-        # The nation should own its starting tile and adjacent ones (if they exist)
+        # The nation should NOT own any tiles initially
         owned_tiles = HexTile.objects.filter(game=self.game, owner=nation)
-        self.assertGreater(owned_tiles.count(), 1)
+        self.assertEqual(owned_tiles.count(), 0)
         
-        # There should be a settlement at the starting tile
-        start_tile = HexTile.objects.filter(game=self.game, owner=nation).first()
-        # Find the one that has a settlement
+        # There should be NO settlement initially
         settlement = Settlement.objects.filter(game=self.game, nation=nation).first()
-        self.assertIsNotNone(settlement)
+        self.assertIsNone(settlement)
         
-        tile_with_settlement = HexTile.objects.get(game=self.game, q=settlement.q, r=settlement.r)
-        self.assertEqual(tile_with_settlement.owner, nation)
+        # But there should be a settler
+        self.assertTrue(Unit.objects.filter(nation=nation, unit_type='settler').exists())
 
     def test_unit_settle_territory(self):
         """Test that building a settlement assigns adjacent tiles."""
@@ -45,7 +43,7 @@ class SettlementExpansionTests(TestCase):
         adj_tile = HexTile.objects.create(game=self.game, q=1, r=0, terrain="plains")
         unit = Unit.objects.create(game=self.game, nation=self.nation, q=0, r=0, unit_type="settler")
         
-        self.client.post(reverse('hexquest:unit_settle', kwargs={'game_id': self.game.id, 'unit_id': unit.id}))
+        self.client.post(reverse('hexquest:unit_settle', kwargs={'game_id': self.game.id, 'unit_id': unit.id}), {'name': 'New City'})
         
         tile.refresh_from_db()
         adj_tile.refresh_from_db()
@@ -59,8 +57,10 @@ class SettlementExpansionTests(TestCase):
         target_tile = HexTile.objects.create(game=self.game, q=1, r=0, terrain="plains")
         
         initial_gold = self.nation.gold
+        # Before expanding, nation owns 1 tile
         owned_count = HexTile.objects.filter(game=self.game, owner=self.nation).count()
-        expected_cost = 10 + (owned_count * 5)
+        self.assertEqual(owned_count, 1)
+        expected_cost = 10 + (owned_count * 5) # 10 + 5 = 15
         
         response = self.client.post(reverse('hexquest:expand_settlement', kwargs={
             'game_id': self.game.id, 
@@ -81,7 +81,7 @@ class SettlementExpansionTests(TestCase):
         adj_tile = HexTile.objects.create(game=self.game, q=1, r=0, terrain="plains")
         unit = Unit.objects.create(game=self.game, nation=self.nation, q=0, r=0, unit_type="settler")
         
-        self.client.post(reverse('hexquest:unit_settle', kwargs={'game_id': self.game.id, 'unit_id': unit.id}))
+        self.client.post(reverse('hexquest:unit_settle', kwargs={'game_id': self.game.id, 'unit_id': unit.id}), {'name': 'New City'})
         
         settlement = Settlement.objects.get(game=self.game, q=0, r=0)
         tile.refresh_from_db()
@@ -96,7 +96,7 @@ class SettlementExpansionTests(TestCase):
         self.nation.save()
         
         settlement = Settlement.objects.create(game=self.game, nation=self.nation, q=0, r=0, name="Test Village")
-        HexTile.objects.create(game=self.game, q=0, r=0, terrain="plains", owner=self.nation)
+        HexTile.objects.create(game=self.game, q=0, r=0, terrain="plains", owner=self.nation, settlement=settlement)
         HexTile.objects.create(game=self.game, q=1, r=0, terrain="plains")
         
         response = self.client.post(reverse('hexquest:expand_settlement', kwargs={
