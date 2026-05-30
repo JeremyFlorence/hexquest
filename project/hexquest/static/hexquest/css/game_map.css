@@ -1,0 +1,49 @@
+header {
+    padding: 16px 24px;
+    background: #020617;
+    border-bottom: 1px solid #334155;
+}
+
+h1 {
+    margin: 0 0 4px;
+    font-size: 24px;
+}
+
+.meta {
+    color: #cbd5e1;
+    font-size: 14px;
+}
+
+.map-wrap {
+    overflow: auto;
+    height: calc(100vh - 82px);
+}
+
+svg {
+    display: block;
+    background: #0f172a;
+}
+
+.hex {
+    stroke: #020617;
+    stroke-width: 1;
+    cursor: pointer;
+}
+
+.hex:hover {
+    stroke: #f9fafb;
+    stroke-width: 2;
+}
+
+.unit {
+    pointer-events: none;
+}
+
+.unit-label {
+    fill: #ffffff;
+    font-size: 10px;
+    font-weight: bold;
+    text-anchor: middle;
+    dominant-baseline: central;
+    pointer-events: none;
+}

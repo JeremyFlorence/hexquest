@@ -1,72 +1,10 @@
+{% load static %}
 <!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
     <title>HexQuest</title>
-    <style>
-        body {
-            margin: 0;
-            background: #111827;
-            color: #f9fafb;
-            font-family: Arial, sans-serif;
-        }
-
-        main {
-            max-width: 900px;
-            margin: 0 auto;
-            padding: 48px 24px;
-        }
-
-        .hero {
-            background: #020617;
-            border: 1px solid #334155;
-            border-radius: 16px;
-            padding: 32px;
-        }
-
-        h1 {
-            margin-top: 0;
-            font-size: 40px;
-        }
-
-        a,
-        button {
-            display: inline-block;
-            margin: 8px 8px 8px 0;
-            padding: 10px 16px;
-            border-radius: 10px;
-            background: #2563eb;
-            color: #ffffff;
-            text-decoration: none;
-            border: 0;
-            cursor: pointer;
-            font: inherit;
-        }
-
-        a.secondary {
-            background: #475569;
-        }
-
-        form {
-            display: inline;
-        }
-
-        .games {
-            margin-top: 32px;
-        }
-
-        .game-card {
-            margin: 12px 0;
-            padding: 16px;
-            background: #1f2937;
-            border: 1px solid #334155;
-            border-radius: 12px;
-        }
-
-        .muted {
-            color: #cbd5e1;
-        }
-    </style>
+    <link rel="stylesheet" href="{% static 'hexquest/css/base.css' %}">
 </head>
 <body>
 <main>
@@ -77,12 +15,14 @@
         {% if user.is_authenticated %}
             <h2>Welcome, {{ user.username }}!</h2>
 
-            <a href="{% url 'hexquest:create_game' %}">Create a New Game</a>
+            <div class="hero-actions">
+                <a href="{% url 'hexquest:create_game' %}">Create a New Game</a>
 
-            <form action="{% url 'hexquest:logout' %}" method="post">
-                {% csrf_token %}
-                <button type="submit">Log out</button>
-            </form>
+                <form action="{% url 'hexquest:logout' %}" method="post">
+                    {% csrf_token %}
+                    <button type="submit" class="secondary">Log out</button>
+                </form>
+            </div>
         {% else %}
             <a href="{% url 'hexquest:login' %}">Log in</a>
             <a class="secondary" href="{% url 'hexquest:register' %}">Registration</a>
