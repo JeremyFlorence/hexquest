@@ -54,7 +54,7 @@ document.addEventListener('DOMContentLoaded', () => {
             const data = await response.json();
 
             if (data.game_active) {
-                window.location.reload(); // Game started!
+                window.location.href = gameMapUrl;
                 return;
             }
 

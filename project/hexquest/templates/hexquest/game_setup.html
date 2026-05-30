@@ -151,6 +151,7 @@
 
 <script>
     const gameId = {{ game.id }};
+    const gameMapUrl = "{% url 'hexquest:game_map' game.id %}";
     const currentUsername = "{{ request.user.username }}";
     let lastChatId = {% if chat_messages %}{{ chat_messages.last.id }}{% else %}0{% endif %};
 </script>
