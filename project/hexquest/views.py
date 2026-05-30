@@ -6,7 +6,7 @@ from django.shortcuts import get_object_or_404, redirect, render
 from django.http import JsonResponse
 from django.utils.crypto import get_random_string
 
-from .models import Game, HexTile, Nation, Unit, ChatMessage
+from .models import Game, HexTile, Nation, Unit, ChatMessage, Notification
 from .worldgen import generate_world
 
 
@@ -26,6 +26,7 @@ def home(request):
         "hexquest/home.html",
         {
             "games": games,
+            "notifications": request.user.notifications.filter(is_read=False) if request.user.is_authenticated else [],
         },
     )
 
@@ -105,15 +106,14 @@ def game_setup(request, game_id):
             try:
                 user_to_invite = User.objects.get(username=username)
                 if not game.nations.filter(player=user_to_invite).exists():
-                    Nation.objects.create(
-                        game=game,
-                        player=user_to_invite,
-                        name=f"{user_to_invite.username}'s Nation",
-                        color="#f87171", # Default color for invited players
-                        food=10,
-                        gold=10,
-                        production=10,
-                    )
+                    # Check if already invited
+                    if not Notification.objects.filter(user=user_to_invite, game=game, notification_type="game_invite").exists():
+                        Notification.objects.create(
+                            user=user_to_invite,
+                            game=game,
+                            notification_type="game_invite",
+                            message=f"{request.user.username} invited you to join the game '{game.name}'"
+                        )
             except User.DoesNotExist:
                 pass # Ideally show an error message
             return redirect("hexquest:game_setup", game_id=game.id)
@@ -224,3 +224,32 @@ def game_setup_updates(request, game_id):
         "nations": nations,
         "game_active": game.is_active,
     })
+
+
+@login_required
+def accept_invite(request, notification_id):
+    notification = get_object_or_404(Notification, id=notification_id, user=request.user)
+    game = notification.game
+    
+    if game and not game.nations.filter(player=request.user).exists():
+        Nation.objects.create(
+            game=game,
+            player=request.user,
+            name=f"{request.user.username}'s Nation",
+            color="#f87171",
+            food=10,
+            gold=10,
+            production=10,
+        )
+    
+    notification.is_read = True
+    notification.save()
+    return redirect("hexquest:game_setup", game_id=game.id)
+
+
+@login_required
+def ignore_invite(request, notification_id):
+    notification = get_object_or_404(Notification, id=notification_id, user=request.user)
+    notification.is_read = True
+    notification.save()
+    return redirect("hexquest:home")

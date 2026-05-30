@@ -30,6 +30,21 @@
     </section>
 
     {% if user.is_authenticated %}
+        {% if notifications %}
+            <section class="notifications">
+                <h2>Notifications</h2>
+                {% for notification in notifications %}
+                    <div class="game-card" style="border-left: 4px solid #38bdf8;">
+                        <p>{{ notification.message }}</p>
+                        <div style="display: flex; gap: 8px; margin-top: 8px;">
+                            <a href="{% url 'hexquest:accept_invite' notification.id %}" style="background: #10b981;">Accept</a>
+                            <a href="{% url 'hexquest:ignore_invite' notification.id %}" class="secondary">Ignore</a>
+                        </div>
+                    </div>
+                {% endfor %}
+            </section>
+        {% endif %}
+
         <section class="games">
             <h2>Your Games</h2>
 
