@@ -44,7 +44,14 @@ class HexTile(models.Model):
     r = models.IntegerField()
     terrain = models.CharField(max_length=20, choices=TERRAIN_CHOICES)
     owner = models.ForeignKey(
-        Nation,
+        "Nation",
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="hexes",
+    )
+    settlement = models.ForeignKey(
+        "Settlement",
         null=True,
         blank=True,
         on_delete=models.SET_NULL,

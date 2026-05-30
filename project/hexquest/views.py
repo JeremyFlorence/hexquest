@@ -374,6 +374,10 @@ def unit_settle(request, game_id, unit_id):
     if unit.unit_type != "settler":
         return JsonResponse({"error": "Only settlers can build settlements"}, status=400)
 
+    name = request.POST.get("name")
+    if not name:
+        return JsonResponse({"error": "Settlement name is required"}, status=400)
+
     tile = HexTile.objects.filter(game_id=game_id, q=unit.q, r=unit.r).first()
     if not tile:
         return JsonResponse({"error": "Tile not found"}, status=404)
@@ -382,20 +386,51 @@ def unit_settle(request, game_id, unit_id):
         return JsonResponse({"error": "Tile already owned"}, status=400)
 
     with transaction.atomic():
-        tile.owner = unit.nation
-        tile.save()
-        Settlement.objects.create(
+        settlement = Settlement.objects.create(
             game=unit.game,
             nation=unit.nation,
             q=unit.q,
             r=unit.r,
-            name=f"{unit.nation.name} Settlement",
+            name=name,
             tier="village",
             population=1
         )
+        
+        tile.owner = unit.nation
+        tile.settlement = settlement
+        tile.save()
+        
+        # Assign all adjacent tiles to the nation
+        from project.hexgrid import hex_neighbors
+        for n_q, n_r in hex_neighbors(tile.q, tile.r):
+            adj_tile = HexTile.objects.filter(game_id=game_id, q=n_q, r=n_r).first()
+            if adj_tile and not adj_tile.owner and adj_tile.terrain != "water":
+                adj_tile.owner = unit.nation
+                adj_tile.settlement = settlement
+                adj_tile.save()
+
         unit.delete()
 
     return JsonResponse({"status": "ok"})
+
+
+@login_required
+def rename_settlement(request, game_id, settlement_id):
+    if request.method != "POST":
+        return JsonResponse({"error": "Method not allowed"}, status=405)
+
+    settlement = get_object_or_404(Settlement, id=settlement_id, game_id=game_id)
+    if settlement.nation.player != request.user:
+        return HttpResponseForbidden("You do not own this settlement")
+
+    name = request.POST.get("name")
+    if not name or not name.strip():
+        return JsonResponse({"error": "Settlement name cannot be empty"}, status=400)
+
+    settlement.name = name.strip()
+    settlement.save()
+
+    return JsonResponse({"status": "ok", "name": settlement.name})
 
 
 def ignore_invite(request, notification_id):
@@ -434,3 +469,50 @@ def upgrade_settlement(request, game_id, settlement_id):
             return JsonResponse({"error": "Need at least 15 population to upgrade to City"}, status=400)
     else:
         return JsonResponse({"error": "Settlement is already at maximum tier"}, status=400)
+
+
+@login_required
+def expand_settlement(request, game_id, settlement_id):
+    if request.method != "POST":
+        return JsonResponse({"error": "Method not allowed"}, status=405)
+
+    settlement = get_object_or_404(Settlement, id=settlement_id, game_id=game_id)
+    if settlement.nation.player != request.user:
+        return HttpResponseForbidden("You do not own this settlement")
+
+    if settlement.nation.has_ended_turn:
+        return JsonResponse({"error": "You have already ended your turn"}, status=400)
+
+    try:
+        q = int(request.POST.get("q"))
+        r = int(request.POST.get("r"))
+    except (TypeError, ValueError):
+        return JsonResponse({"error": "Invalid coordinates"}, status=400)
+
+    # Check if tile is adjacent to the settlement
+    from project.hexgrid import hex_distance
+    if hex_distance(settlement.q, settlement.r, q, r) != 1:
+        return JsonResponse({"error": "Tile must be adjacent to the settlement"}, status=400)
+
+    # Check if tile is valid and unowned
+    target_tile = HexTile.objects.filter(game_id=game_id, q=q, r=r).first()
+    if not target_tile or target_tile.terrain == "water":
+        return JsonResponse({"error": "Invalid tile"}, status=400)
+    if target_tile.owner:
+        return JsonResponse({"error": "Tile already owned"}, status=400)
+
+    # Calculate cost: base cost + 10 * number of tiles already owned
+    owned_tiles_count = HexTile.objects.filter(game_id=game_id, owner=settlement.nation).count()
+    cost = 10 + (owned_tiles_count * 5)  # Let's say base 10, plus 5 per existing tile
+
+    if settlement.nation.gold < cost:
+        return JsonResponse({"error": f"Not enough gold. Need {cost}"}, status=400)
+
+    with transaction.atomic():
+        settlement.nation.gold -= cost
+        settlement.nation.save()
+        target_tile.owner = settlement.nation
+        target_tile.settlement = settlement
+        target_tile.save()
+
+    return JsonResponse({"status": "ok", "cost": cost})

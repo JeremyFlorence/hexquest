@@ -57,6 +57,7 @@ function renderHexes() {
         const terrain = group.dataset.terrain;
         const owner = group.dataset.owner;
         const ownerColor = group.dataset.ownerColor;
+        const settlementName = group.dataset.settlement;
 
         const position = axialToPixel(q, r);
 
@@ -70,8 +71,8 @@ function renderHexes() {
         polygon.setAttribute("fill", terrainColors[terrain] || "#64748b");
 
         if (ownerColor) {
-            polygon.setAttribute("stroke", ownerColor);
-            polygon.setAttribute("stroke-width", "3");
+            polygon.style.setProperty("--owner-color", ownerColor);
+            polygon.style.setProperty("--owner-stroke-width", "3");
         }
 
         const title = document.createElementNS(
@@ -80,7 +81,7 @@ function renderHexes() {
         );
 
         title.textContent = owner
-            ? `(${q}, ${r}) ${terrain} - ${owner}`
+            ? `(${q}, ${r}) ${terrain} - ${owner}${settlementName ? ' (' + settlementName + ')' : ''}`
             : `(${q}, ${r}) ${terrain}`;
 
         polygon.appendChild(title);
@@ -254,6 +255,18 @@ function selectSettlement(group) {
             upgradeBtn.onclick = () => upgradeSettlement(id);
             actionButtons.appendChild(upgradeBtn);
         }
+
+        // Expand Action
+        const expandBtn = document.createElement("button");
+        expandBtn.textContent = "Expand Territory";
+        expandBtn.onclick = () => showExpandTargets(group);
+        actionButtons.appendChild(expandBtn);
+
+        // Rename Action
+        const renameBtn = document.createElement("button");
+        renameBtn.textContent = "Rename Settlement";
+        renameBtn.onclick = () => showNamingModal("Rename Settlement", name, (newName) => performRename(id, newName));
+        actionButtons.appendChild(renameBtn);
     }
 
     const pos = axialToPixel(q, r);
@@ -335,7 +348,7 @@ function selectUnit(unitGroup) {
         if (type === "settler") {
             const settleBtn = document.createElement("button");
             settleBtn.textContent = "Build Settlement";
-            settleBtn.onclick = () => performSettle(id);
+            settleBtn.onclick = () => showNamingModal("Name Your Settlement", "New Settlement", (name) => performSettle(id, name));
             actionButtons.appendChild(settleBtn);
         }
     }
@@ -387,6 +400,55 @@ function showMoveTargets(unitGroup) {
     });
 }
 
+function showExpandTargets(settlementGroup) {
+    clearHighlights();
+    const q = Number(settlementGroup.dataset.q);
+    const r = Number(settlementGroup.dataset.r);
+    const settlementId = settlementGroup.dataset.id;
+
+    const neighbors = [
+        [1, 0], [1, -1], [0, -1], [-1, 0], [-1, 1], [0, 1]
+    ];
+
+    neighbors.forEach(([dq, dr]) => {
+        const targetQ = q + dq;
+        const targetR = r + dr;
+        const hex = document.querySelector(`.hex-group[data-q="${targetQ}"][data-r="${targetR}"] .hex`);
+        if (hex) {
+            const group = hex.parentElement;
+            const terrain = group.dataset.terrain;
+            const ownerId = group.dataset.ownerId;
+            
+            if (terrain !== "water" && !ownerId) {
+                hex.classList.add("highlight-move"); // Reuse highlight-move class for simplicity
+                hex.onclick = () => performExpand(settlementId, targetQ, targetR);
+            }
+        }
+    });
+}
+
+async function performExpand(settlementId, q, r) {
+    const formData = new FormData();
+    formData.append("q", q);
+    formData.append("r", r);
+    formData.append("csrfmiddlewaretoken", csrfToken);
+
+    try {
+        const response = await fetch(`/games/${gameId}/settlement/${settlementId}/expand/`, {
+            method: "POST",
+            body: formData
+        });
+        const data = await response.json();
+        if (data.status === "ok") {
+            window.location.reload();
+        } else {
+            alert(data.error);
+        }
+    } catch (err) {
+        console.error(err);
+    }
+}
+
 function clearHighlights() {
     document.querySelectorAll(".hex.highlight-move").forEach(hex => {
         hex.classList.remove("highlight-move");
@@ -416,12 +478,77 @@ async function performMove(unitId, q, r) {
     }
 }
 
-async function performSettle(unitId) {
+async function performSettle(unitId, name) {
     const formData = new FormData();
     formData.append("csrfmiddlewaretoken", csrfToken);
+    formData.append("name", name);
 
     try {
         const response = await fetch(`/games/${gameId}/unit/${unitId}/settle/`, {
+            method: "POST",
+            body: formData
+        });
+        const data = await response.json();
+        if (data.status === "ok") {
+            window.location.reload();
+        } else {
+            alert(data.error);
+        }
+    } catch (err) {
+        console.error(err);
+    }
+}
+
+function showNamingModal(title, defaultValue, onConfirm) {
+    const modal = document.getElementById("naming-modal");
+    const titleEl = document.getElementById("modal-title");
+    const input = document.getElementById("settlement-name-input");
+    const confirmBtn = document.getElementById("modal-confirm-btn");
+    const cancelBtn = document.getElementById("modal-cancel-btn");
+
+    titleEl.textContent = title;
+    input.value = defaultValue;
+    modal.style.display = "flex";
+    input.focus();
+    input.select();
+
+    const handleConfirm = () => {
+        const name = input.value.trim();
+        if (name) {
+            modal.style.display = "none";
+            onConfirm(name);
+            cleanup();
+        }
+    };
+
+    const handleCancel = () => {
+        modal.style.display = "none";
+        cleanup();
+    };
+
+    const handleKeydown = (e) => {
+        if (e.key === "Enter") handleConfirm();
+        if (e.key === "Escape") handleCancel();
+    };
+
+    const cleanup = () => {
+        confirmBtn.removeEventListener("click", handleConfirm);
+        cancelBtn.removeEventListener("click", handleCancel);
+        input.removeEventListener("keydown", handleKeydown);
+    };
+
+    confirmBtn.addEventListener("click", handleConfirm);
+    cancelBtn.addEventListener("click", handleCancel);
+    input.addEventListener("keydown", handleKeydown);
+}
+
+async function performRename(settlementId, newName) {
+    const formData = new FormData();
+    formData.append("csrfmiddlewaretoken", csrfToken);
+    formData.append("name", newName);
+
+    try {
+        const response = await fetch(`/games/${gameId}/settlement/${settlementId}/rename/`, {
             method: "POST",
             body: formData
         });

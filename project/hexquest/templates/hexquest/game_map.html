@@ -53,7 +53,9 @@
                 data-r="{{ hex.r }}"
                 data-terrain="{{ hex.terrain }}"
                 data-owner="{% if hex.owner %}{{ hex.owner.name }}{% endif %}"
+                data-owner-id="{% if hex.owner %}{{ hex.owner.player.id }}{% endif %}"
                 data-owner-color="{% if hex.owner %}{{ hex.owner.color }}{% endif %}"
+                data-settlement="{% if hex.settlement %}{{ hex.settlement.name }}{% endif %}"
             ></g>
         {% endfor %}
 
@@ -88,6 +90,17 @@
     <div id="action-menu" class="action-menu" style="display: none;">
         <div id="unit-info"></div>
         <div id="action-buttons"></div>
+    </div>
+
+    <div id="naming-modal" class="modal" style="display: none;">
+        <div class="modal-content">
+            <h3 id="modal-title">Name Your Settlement</h3>
+            <input type="text" id="settlement-name-input" maxlength="120">
+            <div class="modal-actions">
+                <button id="modal-confirm-btn">Confirm</button>
+                <button id="modal-cancel-btn">Cancel</button>
+            </div>
+        </div>
     </div>
 </div>
 

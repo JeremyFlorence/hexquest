@@ -73,7 +73,7 @@ def generate_world(game, width, height, seed):
     HexTile.objects.bulk_create(tiles)
 
     # Assign starting positions for nations
-    nations = game.nations.all()
+    nations = list(game.nations.all())
     available_tiles = list(HexTile.objects.filter(game=game).exclude(terrain=TERRAIN_WATER))
     
     if not available_tiles:
@@ -82,14 +82,39 @@ def generate_world(game, width, height, seed):
 
     random.shuffle(available_tiles)
 
-    from .models import Unit
+    from .models import Unit, Settlement
+    from project.hexgrid import hex_neighbors
     
     for nation in nations:
         if available_tiles:
             start_tile = available_tiles.pop()
-            start_tile.owner = nation
-            start_tile.save()
             
+            # Create initial settlement
+            settlement = Settlement.objects.create(
+                game=game,
+                nation=nation,
+                q=start_tile.q,
+                r=start_tile.r,
+                name=f"{nation.name} Capital",
+                tier="village",
+                population=1
+            )
+            
+            start_tile.owner = nation
+            start_tile.settlement = settlement
+            start_tile.save()
+
+            # Assign all adjacent tiles to the nation
+            for n_q, n_r in hex_neighbors(start_tile.q, start_tile.r):
+                adj_tile = HexTile.objects.filter(game=game, q=n_q, r=n_r).first()
+                if adj_tile and adj_tile.terrain != TERRAIN_WATER:
+                    adj_tile.owner = nation
+                    adj_tile.settlement = settlement
+                    adj_tile.save()
+            
+            # Re-fetch nation to avoid stale data if needed
+            nation.refresh_from_db()
+
             # Set starting resources
             nation.gold = game.starting_gold
             nation.food = game.starting_food

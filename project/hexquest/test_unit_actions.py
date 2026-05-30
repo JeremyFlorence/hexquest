@@ -37,7 +37,9 @@ class UnitActionTests(TestCase):
 
     def test_settle_unit(self):
         # Move back to 0,0 if needed or just use current pos
-        response = self.client.post(f"/games/{self.game.id}/unit/{self.unit.id}/settle/")
+        response = self.client.post(f"/games/{self.game.id}/unit/{self.unit.id}/settle/", {
+            "name": "My New Settlement"
+        })
         self.assertEqual(response.status_code, 200)
         
         self.tile_0_0.refresh_from_db()
@@ -47,4 +49,21 @@ class UnitActionTests(TestCase):
         self.assertFalse(Unit.objects.filter(id=self.unit.id).exists())
 
         # Settlement should be created
-        self.assertTrue(Settlement.objects.filter(game=self.game, q=0, r=0, nation=self.nation).exists())
+        settlement = Settlement.objects.get(game=self.game, q=0, r=0, nation=self.nation)
+        self.assertEqual(settlement.name, "My New Settlement")
+
+    def test_rename_settlement(self):
+        settlement = Settlement.objects.create(
+            game=self.game,
+            nation=self.nation,
+            q=0,
+            r=0,
+            name="Old Name",
+            tier="village"
+        )
+        response = self.client.post(f"/games/{self.game.id}/settlement/{settlement.id}/rename/", {
+            "name": "New Name"
+        })
+        self.assertEqual(response.status_code, 200)
+        settlement.refresh_from_db()
+        self.assertEqual(settlement.name, "New Name")
