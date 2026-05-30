@@ -2,6 +2,11 @@ const size = 18;
 const offsetX = 80;
 const offsetY = 80;
 
+let scale = 1.0;
+const minScale = 0.5;
+const maxScale = 3.0;
+const zoomSpeed = 0.1;
+
 const terrainColors = {
     water: "#2563eb",
     plains: "#84cc16",
@@ -257,17 +262,16 @@ function selectSettlement(group) {
     // Position menu and ensure it's within map bounds
     const menuWidth = actionMenu.offsetWidth || 200;
     const menuHeight = actionMenu.offsetHeight || 100;
-    const mapWrap = document.querySelector('.map-wrap');
     
-    let left = pos.x + 20;
-    let top = pos.y - 20;
+    let left = (pos.x * scale) + 20;
+    let top = (pos.y * scale) - 20;
     
     // Basic bounds check against SVG size
     const svg = document.getElementById('map');
-    const svgWidth = svg.width.baseVal.value;
-    const svgHeight = svg.height.baseVal.value;
+    const svgWidth = svg.width.baseVal.value * scale;
+    const svgHeight = svg.height.baseVal.value * scale;
     
-    if (left + menuWidth > svgWidth) left = pos.x - menuWidth - 20;
+    if (left + menuWidth > svgWidth) left = (pos.x * scale) - menuWidth - 20;
     if (top + menuHeight > svgHeight) top = svgHeight - menuHeight - 10;
     if (top < 0) top = 10;
     if (left < 0) left = 10;
@@ -343,15 +347,15 @@ function selectUnit(unitGroup) {
     const menuWidth = actionMenu.offsetWidth || 200;
     const menuHeight = actionMenu.offsetHeight || 100;
     
-    let left = pos.x + 20;
-    let top = pos.y - 20;
+    let left = (pos.x * scale) + 20;
+    let top = (pos.y * scale) - 20;
     
     // Basic bounds check against SVG size
     const svg = document.getElementById('map');
-    const svgWidth = svg.width.baseVal.value;
-    const svgHeight = svg.height.baseVal.value;
+    const svgWidth = svg.width.baseVal.value * scale;
+    const svgHeight = svg.height.baseVal.value * scale;
     
-    if (left + menuWidth > svgWidth) left = pos.x - menuWidth - 20;
+    if (left + menuWidth > svgWidth) left = (pos.x * scale) - menuWidth - 20;
     if (top + menuHeight > svgHeight) top = svgHeight - menuHeight - 10;
     if (top < 0) top = 10;
     if (left < 0) left = 10;
@@ -502,4 +506,61 @@ document.addEventListener('DOMContentLoaded', () => {
             closeActionMenu();
         }
     });
+
+    // Zoom functionality
+    const mapSvg = document.getElementById('map');
+    const mapWrap = document.querySelector('.map-wrap');
+    mapSvg.style.transformOrigin = '0 0';
+
+    window.addEventListener('wheel', (e) => {
+        if (e.ctrlKey || e.metaKey) {
+            e.preventDefault();
+
+            // Get mouse position relative to map-wrap
+            const rect = mapWrap.getBoundingClientRect();
+            const mouseX = e.clientX - rect.left;
+            const mouseY = e.clientY - rect.top;
+
+            // Get mouse position relative to map content (taking current scale and scroll into account)
+            const contentX = (mouseX + mapWrap.scrollLeft) / scale;
+            const contentY = (mouseY + mapWrap.scrollTop) / scale;
+
+            const delta = e.deltaY > 0 ? -zoomSpeed : zoomSpeed;
+            const oldScale = scale;
+            scale = Math.min(Math.max(scale + delta, minScale), maxScale);
+
+            if (oldScale !== scale) {
+                mapSvg.style.transform = `scale(${scale})`;
+
+                // Adjust scroll to keep contentX, contentY under the mouse
+                mapWrap.scrollLeft = contentX * scale - mouseX;
+                mapWrap.scrollTop = contentY * scale - mouseY;
+                
+                // If action menu is open, reposition it
+                const actionMenu = document.getElementById('action-menu');
+                if (actionMenu.style.display === 'block' && selectedUnit) {
+                    const q = Number(selectedUnit.dataset.q);
+                    const r = Number(selectedUnit.dataset.r);
+                    const pos = axialToPixel(q, r);
+                    
+                    const menuWidth = actionMenu.offsetWidth || 200;
+                    const menuHeight = actionMenu.offsetHeight || 100;
+                    
+                    let left = (pos.x * scale) + 20;
+                    let top = (pos.y * scale) - 20;
+                    
+                    const svgWidth = mapSvg.width.baseVal.value * scale;
+                    const svgHeight = mapSvg.height.baseVal.value * scale;
+                    
+                    if (left + menuWidth > svgWidth) left = (pos.x * scale) - menuWidth - 20;
+                    if (top + menuHeight > svgHeight) top = svgHeight - menuHeight - 10;
+                    if (top < 0) top = 10;
+                    if (left < 0) left = 10;
+
+                    actionMenu.style.left = `${left}px`;
+                    actionMenu.style.top = `${top}px`;
+                }
+            }
+        }
+    }, { passive: false });
 });
