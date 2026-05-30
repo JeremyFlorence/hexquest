@@ -12,7 +12,12 @@ section {
 
 button.success {
     background: #059669;
-    width: 100%;
+    font-size: 18px;
+    padding: 16px;
+}
+
+button.danger {
+    background: #dc2626;
     font-size: 18px;
     padding: 16px;
 }
