@@ -358,6 +358,15 @@ def process_turn_end(game):
     # Check for game end condition (3 turns without activity)
     if game.current_turn - game.last_activity_turn >= 3:
         game.is_finished = True
+        # Save statistics and delete temporary game objects
+        for nation in game.nations.all():
+            nation.settlement_count = nation.settlements.count()
+            nation.unit_count = nation.units.count()
+            nation.save()
+        
+        game.hexes.all().delete()
+        game.settlements.all().delete()
+        game.units.all().delete()
 
     game.current_turn += 1
     game.turn_end_time = timezone.now() + datetime.timedelta(seconds=game.turn_timer)

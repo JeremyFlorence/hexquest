@@ -29,6 +29,8 @@ class Nation(models.Model):
     food = models.IntegerField(default=0)
     gold = models.IntegerField(default=0)
     production = models.IntegerField(default=0)
+    settlement_count = models.PositiveIntegerField(default=0)
+    unit_count = models.PositiveIntegerField(default=0)
     has_ended_turn = models.BooleanField(default=False)
 
 
