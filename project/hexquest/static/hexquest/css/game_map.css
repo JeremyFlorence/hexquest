@@ -82,6 +82,25 @@ svg {
     box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.5);
     z-index: 50;
     pointer-events: auto;
+    user-select: none;
+}
+
+.drag-handle {
+    padding: 2px;
+    margin: -12px -12px 8px -12px;
+    background: #334155;
+    border-top-left-radius: 8px;
+    border-top-right-radius: 8px;
+    text-align: center;
+    cursor: move;
+    color: #94a3b8;
+    font-size: 14px;
+    line-height: 1;
+}
+
+.drag-handle:hover {
+    background: #475569;
+    color: #cbd5e1;
 }
 
 .action-menu #unit-info {

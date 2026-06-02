@@ -204,6 +204,7 @@ function renderSettlements() {
 function closeActionMenu() {
     const actionMenu = document.getElementById("action-menu");
     selectedUnit = null;
+    isMenuDragged = false;
     actionMenu.style.display = "none";
     clearHighlights();
 }
@@ -265,25 +266,27 @@ function selectSettlement(group) {
     const pos = axialToPixel(q, r);
     actionMenu.style.display = "block";
     
-    // Position menu and ensure it's within map bounds
-    const menuWidth = actionMenu.offsetWidth || 200;
-    const menuHeight = actionMenu.offsetHeight || 100;
-    
-    let left = (pos.x * scale) + 20;
-    let top = (pos.y * scale) - 20;
-    
-    // Basic bounds check against SVG size
-    const svg = document.getElementById('map');
-    const svgWidth = svg.width.baseVal.value * scale;
-    const svgHeight = svg.height.baseVal.value * scale;
-    
-    if (left + menuWidth > svgWidth) left = (pos.x * scale) - menuWidth - 20;
-    if (top + menuHeight > svgHeight) top = svgHeight - menuHeight - 10;
-    if (top < 0) top = 10;
-    if (left < 0) left = 10;
+    if (!isMenuDragged) {
+        // Position menu and ensure it's within map bounds
+        const menuWidth = actionMenu.offsetWidth || 200;
+        const menuHeight = actionMenu.offsetHeight || 100;
+        
+        let left = (pos.x * scale) + 20;
+        let top = (pos.y * scale) - 20;
+        
+        // Basic bounds check against SVG size
+        const svg = document.getElementById('map');
+        const svgWidth = svg.width.baseVal.value * scale;
+        const svgHeight = svg.height.baseVal.value * scale;
+        
+        if (left + menuWidth > svgWidth) left = (pos.x * scale) - menuWidth - 20;
+        if (top + menuHeight > svgHeight) top = svgHeight - menuHeight - 10;
+        if (top < 0) top = 10;
+        if (left < 0) left = 10;
 
-    actionMenu.style.left = `${left}px`;
-    actionMenu.style.top = `${top}px`;
+        actionMenu.style.left = `${left}px`;
+        actionMenu.style.top = `${top}px`;
+    }
 }
 
 function showSettlementActions(id, tier, population, container) {
@@ -337,6 +340,7 @@ async function upgradeSettlement(settlementId) {
 }
 
 let selectedUnit = null;
+let isMenuDragged = false;
 
 function selectUnit(unitGroup) {
     const actionMenu = document.getElementById("action-menu");
@@ -386,25 +390,27 @@ function selectUnit(unitGroup) {
     const pos = axialToPixel(q, r);
     actionMenu.style.display = "block";
 
-    // Position menu and ensure it's within map bounds
-    const menuWidth = actionMenu.offsetWidth || 200;
-    const menuHeight = actionMenu.offsetHeight || 100;
-    
-    let left = (pos.x * scale) + 20;
-    let top = (pos.y * scale) - 20;
-    
-    // Basic bounds check against SVG size
-    const svg = document.getElementById('map');
-    const svgWidth = svg.width.baseVal.value * scale;
-    const svgHeight = svg.height.baseVal.value * scale;
-    
-    if (left + menuWidth > svgWidth) left = (pos.x * scale) - menuWidth - 20;
-    if (top + menuHeight > svgHeight) top = svgHeight - menuHeight - 10;
-    if (top < 0) top = 10;
-    if (left < 0) left = 10;
+    if (!isMenuDragged) {
+        // Position menu and ensure it's within map bounds
+        const menuWidth = actionMenu.offsetWidth || 200;
+        const menuHeight = actionMenu.offsetHeight || 100;
+        
+        let left = (pos.x * scale) + 20;
+        let top = (pos.y * scale) - 20;
+        
+        // Basic bounds check against SVG size
+        const svg = document.getElementById('map');
+        const svgWidth = svg.width.baseVal.value * scale;
+        const svgHeight = svg.height.baseVal.value * scale;
+        
+        if (left + menuWidth > svgWidth) left = (pos.x * scale) - menuWidth - 20;
+        if (top + menuHeight > svgHeight) top = svgHeight - menuHeight - 10;
+        if (top < 0) top = 10;
+        if (left < 0) left = 10;
 
-    actionMenu.style.left = `${left}px`;
-    actionMenu.style.top = `${top}px`;
+        actionMenu.style.left = `${left}px`;
+        actionMenu.style.top = `${top}px`;
+    }
 }
 
 function showUnitActions(id, type, container) {
@@ -698,6 +704,37 @@ document.addEventListener('DOMContentLoaded', () => {
     const mapWrap = document.querySelector('.map-wrap');
     mapSvg.style.transformOrigin = '0 0';
 
+    // Draggable action menu
+    const actionMenu = document.getElementById('action-menu');
+    const dragHandle = document.getElementById('action-menu-handle');
+    let isDragging = false;
+    let dragStartX, dragStartY;
+    let menuStartX, menuStartY;
+
+    dragHandle.addEventListener('mousedown', (e) => {
+        isDragging = true;
+        isMenuDragged = true;
+        dragStartX = e.clientX;
+        dragStartY = e.clientY;
+        menuStartX = parseInt(actionMenu.style.left) || 0;
+        menuStartY = parseInt(actionMenu.style.top) || 0;
+        e.preventDefault();
+    });
+
+    document.addEventListener('mousemove', (e) => {
+        if (!isDragging) return;
+        
+        const dx = e.clientX - dragStartX;
+        const dy = e.clientY - dragStartY;
+        
+        actionMenu.style.left = `${menuStartX + dx}px`;
+        actionMenu.style.top = `${menuStartY + dy}px`;
+    });
+
+    document.addEventListener('mouseup', () => {
+        isDragging = false;
+    });
+
     window.addEventListener('wheel', (e) => {
         if (e.ctrlKey || e.metaKey) {
             e.preventDefault();
@@ -724,7 +761,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 
                 // If action menu is open, reposition it
                 const actionMenu = document.getElementById('action-menu');
-                if (actionMenu.style.display === 'block' && selectedUnit) {
+                if (actionMenu.style.display === 'block' && selectedUnit && !isMenuDragged) {
                     const q = Number(selectedUnit.dataset.q);
                     const r = Number(selectedUnit.dataset.r);
                     const pos = axialToPixel(q, r);
