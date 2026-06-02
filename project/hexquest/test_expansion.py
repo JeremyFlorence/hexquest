@@ -45,6 +45,9 @@ class SettlementExpansionTests(TestCase):
         
         self.client.post(reverse('hexquest:unit_settle', kwargs={'game_id': self.game.id, 'unit_id': unit.id}), {'name': 'New City'})
         
+        from .views import process_turn_end
+        process_turn_end(self.game)
+
         tile.refresh_from_db()
         adj_tile.refresh_from_db()
         self.assertEqual(tile.owner, self.nation)
@@ -68,6 +71,11 @@ class SettlementExpansionTests(TestCase):
         }), {'q': 1, 'r': 0})
         
         self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()['status'], 'queued')
+
+        from .views import process_turn_end
+        process_turn_end(self.game)
+
         self.nation.refresh_from_db()
         self.assertEqual(self.nation.gold, initial_gold - expected_cost)
         
@@ -83,6 +91,9 @@ class SettlementExpansionTests(TestCase):
         
         self.client.post(reverse('hexquest:unit_settle', kwargs={'game_id': self.game.id, 'unit_id': unit.id}), {'name': 'New City'})
         
+        from .views import process_turn_end
+        process_turn_end(self.game)
+
         settlement = Settlement.objects.get(game=self.game, q=0, r=0)
         tile.refresh_from_db()
         adj_tile.refresh_from_db()

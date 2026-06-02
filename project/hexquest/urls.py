@@ -20,6 +20,7 @@ urlpatterns = [
     path("games/<int:game_id>/settlement/<int:settlement_id>/upgrade/", views.upgrade_settlement, name="upgrade_settlement"),
     path("games/<int:game_id>/settlement/<int:settlement_id>/rename/", views.rename_settlement, name="rename_settlement"),
     path("games/<int:game_id>/settlement/<int:settlement_id>/expand/", views.expand_settlement, name="expand_settlement"),
+    path("games/<int:game_id>/cancel-action/", views.cancel_action, name="cancel_action"),
     path("games/<int:game_id>/updates/", views.game_updates, name="game_updates"),
     path("notifications/<int:notification_id>/accept/", views.accept_invite, name="accept_invite"),
     path("notifications/<int:notification_id>/ignore/", views.ignore_invite, name="ignore_invite"),

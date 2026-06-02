@@ -28,6 +28,9 @@ class SettlementTierTests(TestCase):
         """Test that a new settlement starts as a Village."""
         self.client.post(reverse('hexquest:unit_settle', kwargs={'game_id': self.game.id, 'unit_id': self.unit.id}), {'name': 'New City'})
         
+        from .views import process_turn_end
+        process_turn_end(self.game)
+
         settlement = Settlement.objects.get(game=self.game, q=0, r=0)
         self.assertEqual(settlement.tier, "village")
         self.assertEqual(settlement.population, 1)
@@ -53,8 +56,11 @@ class SettlementTierTests(TestCase):
         
         response = self.client.post(reverse('hexquest:upgrade_settlement', kwargs={'game_id': self.game.id, 'settlement_id': settlement.id}))
         self.assertEqual(response.status_code, 200)
-        self.assertEqual(response.json()['new_tier'], "town")
+        self.assertEqual(response.json()['status'], 'queued')
         
+        from .views import process_turn_end
+        process_turn_end(self.game)
+
         settlement.refresh_from_db()
         self.assertEqual(settlement.tier, "town")
 
@@ -79,7 +85,10 @@ class SettlementTierTests(TestCase):
         
         response = self.client.post(reverse('hexquest:upgrade_settlement', kwargs={'game_id': self.game.id, 'settlement_id': settlement.id}))
         self.assertEqual(response.status_code, 200)
-        self.assertEqual(response.json()['new_tier'], "city")
+        self.assertEqual(response.json()['status'], 'queued')
         
+        from .views import process_turn_end
+        process_turn_end(self.game)
+
         settlement.refresh_from_db()
         self.assertEqual(settlement.tier, "city")

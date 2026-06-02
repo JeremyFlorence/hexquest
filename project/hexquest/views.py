@@ -395,6 +395,25 @@ def game_updates(request, game_id):
         "gold": nation.gold,
         "food": nation.food,
         "unit_count": nation.units.count(),
+        "queued_actions": [
+            {
+                "id": u.id,
+                "type": "unit",
+                "unit_type": u.unit_type,
+                "action": u.queued_action,
+                "q": u.q,
+                "r": u.r
+            } for u in nation.units.exclude(queued_action__isnull=True)
+        ] + [
+            {
+                "id": s.id,
+                "type": "settlement",
+                "name": s.name,
+                "action": s.queued_action,
+                "q": s.q,
+                "r": s.r
+            } for s in nation.settlements.exclude(queued_action__isnull=True)
+        ]
     })
 
 
@@ -469,15 +488,8 @@ def unit_move(request, game_id, unit_id):
     if unit.nation.has_ended_turn:
         return JsonResponse({"error": "You have already ended your turn"}, status=400)
 
-    if unit.last_action_turn == unit.game.current_turn:
-        try:
-            q = int(request.POST.get("q"))
-            r = int(request.POST.get("r"))
-        except (TypeError, ValueError):
-            return JsonResponse({"error": "Invalid coordinates"}, status=400)
-        unit.queued_action = {"type": "move", "q": q, "r": r}
-        unit.save()
-        return JsonResponse({"status": "queued", "message": "Action queued for next turn"})
+    if unit.queued_action:
+        return JsonResponse({"error": "This unit has already acted this turn"}, status=400)
 
     try:
         q = int(request.POST.get("q"))
@@ -494,12 +506,9 @@ def unit_move(request, game_id, unit_id):
     if not target_tile or target_tile.terrain == "water":
         return JsonResponse({"error": "Cannot move there"}, status=400)
 
-    unit.q = q
-    unit.r = r
-    unit.last_action_turn = unit.game.current_turn
+    unit.queued_action = {"type": "move", "q": q, "r": r}
     unit.save()
-
-    return JsonResponse({"status": "ok", "q": unit.q, "r": unit.r})
+    return JsonResponse({"status": "queued", "message": "Action queued for next turn"})
 
 
 @login_required
@@ -514,13 +523,8 @@ def unit_settle(request, game_id, unit_id):
     if unit.nation.has_ended_turn:
         return JsonResponse({"error": "You have already ended your turn"}, status=400)
 
-    if unit.last_action_turn == unit.game.current_turn:
-        name = request.POST.get("name")
-        if not name:
-            return JsonResponse({"error": "Settlement name is required"}, status=400)
-        unit.queued_action = {"type": "settle", "name": name}
-        unit.save()
-        return JsonResponse({"status": "queued", "message": "Action queued for next turn"})
+    if unit.queued_action:
+        return JsonResponse({"error": "This unit has already acted this turn"}, status=400)
 
     if unit.unit_type != "settler":
         return JsonResponse({"error": "Only settlers can build settlements"}, status=400)
@@ -536,33 +540,9 @@ def unit_settle(request, game_id, unit_id):
     if tile.owner:
         return JsonResponse({"error": "Tile already owned"}, status=400)
 
-    with transaction.atomic():
-        settlement = Settlement.objects.create(
-            game=unit.game,
-            nation=unit.nation,
-            q=unit.q,
-            r=unit.r,
-            name=name,
-            tier="village",
-            population=1
-        )
-        
-        tile.owner = unit.nation
-        tile.settlement = settlement
-        tile.save()
-        
-        # Assign all adjacent tiles to the nation
-        from project.hexgrid import hex_neighbors
-        for n_q, n_r in hex_neighbors(tile.q, tile.r):
-            adj_tile = HexTile.objects.filter(game_id=game_id, q=n_q, r=n_r).first()
-            if adj_tile and not adj_tile.owner and adj_tile.terrain != "water":
-                adj_tile.owner = unit.nation
-                adj_tile.settlement = settlement
-                adj_tile.save()
-
-        unit.delete()
-
-    return JsonResponse({"status": "ok"})
+    unit.queued_action = {"type": "settle", "name": name}
+    unit.save()
+    return JsonResponse({"status": "queued", "message": "Action queued for next turn"})
 
 
 @login_required
@@ -603,30 +583,22 @@ def upgrade_settlement(request, game_id, settlement_id):
     if settlement.nation.has_ended_turn:
         return JsonResponse({"error": "You have already ended your turn"}, status=400)
 
-    if settlement.last_action_turn == settlement.game.current_turn:
-        settlement.queued_action = {"type": "upgrade"}
-        settlement.save()
-        return JsonResponse({"status": "queued", "message": "Action queued for next turn"})
+    if settlement.queued_action:
+        return JsonResponse({"error": "This settlement has already acted this turn"}, status=400)
 
-    # Upgrade logic
+    # Upgrade logic validation
     if settlement.tier == "village":
-        if settlement.population >= 5:
-            settlement.tier = "town"
-            settlement.last_action_turn = settlement.game.current_turn
-            settlement.save()
-            return JsonResponse({"status": "ok", "new_tier": settlement.tier})
-        else:
+        if settlement.population < 5:
             return JsonResponse({"error": "Need at least 5 population to upgrade to Town"}, status=400)
     elif settlement.tier == "town":
-        if settlement.population >= 15:
-            settlement.tier = "city"
-            settlement.last_action_turn = settlement.game.current_turn
-            settlement.save()
-            return JsonResponse({"status": "ok", "new_tier": settlement.tier})
-        else:
+        if settlement.population < 15:
             return JsonResponse({"error": "Need at least 15 population to upgrade to City"}, status=400)
     else:
         return JsonResponse({"error": "Settlement is already at maximum tier"}, status=400)
+
+    settlement.queued_action = {"type": "upgrade"}
+    settlement.save()
+    return JsonResponse({"status": "queued", "message": "Action queued for next turn"})
 
 
 @login_required
@@ -641,15 +613,8 @@ def expand_settlement(request, game_id, settlement_id):
     if settlement.nation.has_ended_turn:
         return JsonResponse({"error": "You have already ended your turn"}, status=400)
 
-    if settlement.last_action_turn == settlement.game.current_turn:
-        try:
-            q = int(request.POST.get("q"))
-            r = int(request.POST.get("r"))
-        except (TypeError, ValueError):
-            return JsonResponse({"error": "Invalid coordinates"}, status=400)
-        settlement.queued_action = {"type": "expand", "q": q, "r": r}
-        settlement.save()
-        return JsonResponse({"status": "queued", "message": "Action queued for next turn"})
+    if settlement.queued_action:
+        return JsonResponse({"error": "This settlement has already acted this turn"}, status=400)
 
     try:
         q = int(request.POST.get("q"))
@@ -678,18 +643,42 @@ def expand_settlement(request, game_id, settlement_id):
 
     # Calculate cost: base cost + 10 * number of tiles already owned
     owned_tiles_count = HexTile.objects.filter(game_id=game_id, owner=settlement.nation).count()
-    cost = 10 + (owned_tiles_count * 5)  # Let's say base 10, plus 5 per existing tile
+    cost = 10 + (owned_tiles_count * 5)
 
     if settlement.nation.gold < cost:
         return JsonResponse({"error": f"Not enough gold. Need {cost}"}, status=400)
 
-    with transaction.atomic():
-        settlement.nation.gold -= cost
-        settlement.nation.save()
-        target_tile.owner = settlement.nation
-        target_tile.settlement = settlement
-        target_tile.save()
-        settlement.last_action_turn = settlement.game.current_turn
-        settlement.save()
+    settlement.queued_action = {"type": "expand", "q": q, "r": r}
+    settlement.save()
+    return JsonResponse({"status": "queued", "message": "Action queued for next turn"})
 
-    return JsonResponse({"status": "ok", "cost": cost})
+
+@login_required
+def cancel_action(request, game_id):
+    if request.method != "POST":
+        return JsonResponse({"error": "Method not allowed"}, status=405)
+
+    try:
+        data = json.loads(request.body)
+        object_id = data.get("id")
+        object_type = data.get("type")
+    except (json.JSONDecodeError, AttributeError):
+        return JsonResponse({"error": "Invalid data"}, status=400)
+
+    if object_type == "unit":
+        obj = get_object_or_404(Unit, id=object_id, game_id=game_id)
+    elif object_type == "settlement":
+        obj = get_object_or_404(Settlement, id=object_id, game_id=game_id)
+    else:
+        return JsonResponse({"error": "Invalid object type"}, status=400)
+
+    if obj.nation.player != request.user:
+        return HttpResponseForbidden("You do not own this")
+
+    if obj.nation.has_ended_turn:
+        return JsonResponse({"error": "You have already ended your turn"}, status=400)
+
+    obj.queued_action = None
+    obj.save()
+
+    return JsonResponse({"status": "ok"})

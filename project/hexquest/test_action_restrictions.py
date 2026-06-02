@@ -42,8 +42,8 @@ class ActionRestrictionTests(TestCase):
         self.assertIn("already acted", response.json()["error"])
         
         # Advance turn
-        self.game.current_turn += 1
-        self.game.save()
+        from hexquest.views import process_turn_end
+        process_turn_end(self.game)
         
         # Should be able to move now
         response = self.client.post(f"/games/{self.game.id}/unit/{self.unit.id}/move/", {

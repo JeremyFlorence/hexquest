@@ -37,33 +37,30 @@ class QueuedActionTests(TestCase):
         )
 
     def test_queue_unit_move(self):
-        # First action: move to 1,0
-        self.client.post(f"/games/{self.game.id}/unit/{self.unit.id}/move/", {"q": 1, "r": 0})
-        self.unit.refresh_from_db()
-        self.assertEqual(self.unit.q, 1)
-        self.assertEqual(self.unit.last_action_turn, self.game.current_turn)
-
-        # Second action: queue move to 2,0
-        response = self.client.post(f"/games/{self.game.id}/unit/{self.unit.id}/move/", {"q": 2, "r": 0})
+        # Action should be queued even if it's the first action
+        response = self.client.post(f"/games/{self.game.id}/unit/{self.unit.id}/move/", {"q": 1, "r": 0})
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.json()['status'], 'queued')
-        
+
         self.unit.refresh_from_db()
-        self.assertEqual(self.unit.queued_action, {"type": "move", "q": 2, "r": 0})
-        self.assertEqual(self.unit.q, 1) # Still at 1,0
+        self.assertEqual(self.unit.q, 0) # Still at 0,0
+        self.assertEqual(self.unit.queued_action, {"type": "move", "q": 1, "r": 0})
 
         # End turn
         process_turn_end(self.game)
         
         self.unit.refresh_from_db()
-        self.assertEqual(self.unit.q, 2)
+        self.assertEqual(self.unit.q, 1)
         self.assertIsNone(self.unit.queued_action)
 
     def test_queue_unit_settle(self):
-        # First action: move to 1,0
+        # Move first (queued)
         self.client.post(f"/games/{self.game.id}/unit/{self.unit.id}/move/", {"q": 1, "r": 0})
-        
-        # Second action: queue settle
+        process_turn_end(self.game)
+        self.unit.refresh_from_db()
+        self.assertEqual(self.unit.q, 1)
+
+        # Queue settle
         response = self.client.post(f"/games/{self.game.id}/unit/{self.unit.id}/settle/", {"name": "New City"})
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.json()['status'], 'queued')
@@ -131,22 +128,7 @@ class QueuedActionTests(TestCase):
         mountain_tile.terrain = "mountain"
         mountain_tile.save()
         
-        # Set acted
-        self.unit.last_action_turn = self.game.current_turn
-        self.unit.save()
-        
-        # Queue move to mountain (invalid)
-        self.client.post(f"/games/{self.game.id}/unit/{self.unit.id}/move/", {"q": 1, "r": 1})
-        self.unit.refresh_from_db()
-        self.assertEqual(self.unit.queued_action, {"type": "move", "q": 1, "r": 1})
-        
-        # Change mountain to water just to be sure it's invalid
-        mountain_tile.terrain = "water"
-        mountain_tile.save()
-        
-        # End turn
-        process_turn_end(self.game)
-        
-        self.unit.refresh_from_db()
-        self.assertEqual(self.unit.q, 0) # Should not have moved
-        self.assertIsNone(self.unit.queued_action) # Should have been cleared anyway
+        # Action move to mountain (invalid) - currently the backend still validates immediately
+        response = self.client.post(f"/games/{self.game.id}/unit/{self.unit.id}/move/", {"q": 1, "r": 1})
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("error", response.json())

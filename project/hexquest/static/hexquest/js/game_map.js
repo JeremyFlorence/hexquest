@@ -201,6 +201,76 @@ function renderSettlements() {
     });
 }
 
+function updateQueuedActionsList(actions) {
+    const list = document.getElementById("queued-actions-list");
+    list.innerHTML = "";
+
+    if (!actions || actions.length === 0) {
+        const empty = document.createElement("li");
+        empty.textContent = "No actions queued.";
+        empty.style.color = "#94a3b8";
+        empty.style.fontSize = "14px";
+        list.appendChild(empty);
+        return;
+    }
+
+    actions.forEach(action => {
+        const item = document.createElement("li");
+        item.className = "queued-action-item";
+
+        const title = document.createElement("span");
+        title.className = "action-title";
+        const label = action.type === "unit" ? action.unit_type : action.name;
+        title.textContent = `${label} (${action.q}, ${action.r})`;
+
+        const details = document.createElement("span");
+        details.className = "action-details";
+        
+        let actionDesc = "";
+        if (action.action.type === "move") {
+            actionDesc = `Move to (${action.action.q}, ${action.action.r})`;
+        } else if (action.action.type === "settle") {
+            actionDesc = `Settle: ${action.action.name}`;
+        } else if (action.action.type === "upgrade") {
+            actionDesc = "Upgrade settlement";
+        } else if (action.action.type === "expand") {
+            actionDesc = `Expand to (${action.action.q}, ${action.action.r})`;
+        }
+        details.textContent = actionDesc;
+
+        const cancelBtn = document.createElement("button");
+        cancelBtn.className = "cancel-action-btn";
+        cancelBtn.textContent = "Cancel";
+        cancelBtn.onclick = () => cancelQueuedAction(action.id, action.type);
+
+        item.appendChild(title);
+        item.appendChild(details);
+        item.appendChild(cancelBtn);
+        list.appendChild(item);
+    });
+}
+
+async function cancelQueuedAction(id, type) {
+    try {
+        const response = await fetch(cancelActionUrl, {
+            method: "POST",
+            headers: {
+                "Content-Type": "application/json",
+                "X-CSRFToken": csrfToken
+            },
+            body: JSON.stringify({ id, type })
+        });
+        const data = await response.json();
+        if (data.status === "ok") {
+            window.location.reload();
+        } else {
+            alert(data.error);
+        }
+    } catch (err) {
+        console.error(err);
+    }
+}
+
 function closeActionMenu() {
     const actionMenu = document.getElementById("action-menu");
     selectedUnit = null;
@@ -239,19 +309,10 @@ function selectSettlement(group) {
     if (ownerId === currentUserId && !hasEndedTurn) {
         if (isQueued) {
             const msg = document.createElement("p");
-            msg.textContent = "Action already queued for next turn.";
+            msg.textContent = "Action queued for end of turn.";
             msg.style.color = "#8b5cf6";
             msg.style.fontSize = "0.875rem";
             actionButtons.appendChild(msg);
-        } else if (lastActionTurn === currentTurn) {
-            const msg = document.createElement("p");
-            msg.textContent = "Acting again will queue the action for next turn.";
-            msg.style.color = "#f59e0b";
-            msg.style.fontSize = "0.875rem";
-            msg.style.marginBottom = "0.5rem";
-            actionButtons.appendChild(msg);
-            
-            showSettlementActions(id, tier, population, actionButtons);
         } else {
             showSettlementActions(id, tier, population, actionButtons);
         }
@@ -369,19 +430,10 @@ function selectUnit(unitGroup) {
     if (ownerId === currentUserId && !hasEndedTurn) {
         if (isQueued) {
             const msg = document.createElement("p");
-            msg.textContent = "Action already queued for next turn.";
+            msg.textContent = "Action queued for end of turn.";
             msg.style.color = "#8b5cf6";
             msg.style.fontSize = "0.875rem";
             actionButtons.appendChild(msg);
-        } else if (lastActionTurn === currentTurn) {
-            const msg = document.createElement("p");
-            msg.textContent = "Acting again will queue the action for next turn.";
-            msg.style.color = "#f59e0b";
-            msg.style.fontSize = "0.875rem";
-            msg.style.marginBottom = "0.5rem";
-            actionButtons.appendChild(msg);
-
-            showUnitActions(id, type, actionButtons);
         } else {
             showUnitActions(id, type, actionButtons);
         }
@@ -684,6 +736,9 @@ document.addEventListener('DOMContentLoaded', () => {
             if (goldDisplay) goldDisplay.textContent = data.gold;
             if (foodDisplay) foodDisplay.textContent = data.food;
             if (unitsDisplay) unitsDisplay.textContent = data.unit_count;
+
+            // Update queued actions list
+            updateQueuedActionsList(data.queued_actions);
         } catch (err) {
             console.error("Failed to fetch updates", err);
         }
@@ -691,6 +746,9 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // Poll for updates every 2 seconds
     setInterval(fetchUpdates, 2000);
+
+    // Initial fetch to populate sidebar
+    fetchUpdates();
 
     // Escape key to close action menu
     document.addEventListener('keydown', (e) => {

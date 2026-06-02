@@ -31,6 +31,11 @@ class UnitActionTests(TestCase):
             "r": 0
         })
         self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()['status'], 'queued')
+        
+        from hexquest.views import process_turn_end
+        process_turn_end(self.game)
+
         self.unit.refresh_from_db()
         self.assertEqual(self.unit.q, 1)
         self.assertEqual(self.unit.r, 0)
@@ -41,6 +46,10 @@ class UnitActionTests(TestCase):
             "name": "My New Settlement"
         })
         self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()['status'], 'queued')
+
+        from hexquest.views import process_turn_end
+        process_turn_end(self.game)
         
         self.tile_0_0.refresh_from_db()
         self.assertEqual(self.tile_0_0.owner, self.nation)

@@ -32,6 +32,7 @@
 <script>
     const gameId = {{ game.id }};
     const gameUpdatesUrl = "{% url 'hexquest:game_updates' game.id %}";
+    const cancelActionUrl = "{% url 'hexquest:cancel_action' game.id %}";
     const currentUserId = {{ request.user.id }};
     const csrfToken = "{{ csrf_token }}";
     let currentTurn = {{ game.current_turn }};
@@ -39,7 +40,8 @@
     let hasEndedTurn = {% if nation.has_ended_turn %}true{% else %}false{% endif %};
 </script>
 
-<div class="map-wrap">
+<div class="game-container">
+    <div class="map-wrap">
     <svg
         id="map"
         width="{{ game.width|add:game.height|add:10 }}00"
@@ -108,6 +110,14 @@
             </div>
         </div>
     </div>
+</div>
+
+<aside id="queued-actions-sidebar" class="sidebar">
+    <h3>Queued Actions</h3>
+    <ul id="queued-actions-list">
+        <!-- To be populated by JS -->
+    </ul>
+</aside>
 </div>
 
 <script src="{% static 'hexquest/js/game_map.js' %}"></script>
