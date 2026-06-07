@@ -20,6 +20,9 @@ class Game(models.Model):
     is_abandoned = models.BooleanField(default=False)
     last_activity_turn = models.PositiveIntegerField(default=1)
 
+    def __str__(self):
+        return self.name
+
 
 class Nation(models.Model):
     game = models.ForeignKey(Game, on_delete=models.CASCADE, related_name="nations")
@@ -32,6 +35,9 @@ class Nation(models.Model):
     settlement_count = models.PositiveIntegerField(default=0)
     unit_count = models.PositiveIntegerField(default=0)
     has_ended_turn = models.BooleanField(default=False)
+
+    def __str__(self):
+        return f"{self.name} ({self.game.name})"
 
 
 class HexTile(models.Model):
@@ -70,6 +76,9 @@ class HexTile(models.Model):
             models.Index(fields=["game", "owner"]),
         ]
 
+    def __str__(self):
+        return f"Hex ({self.q}, {self.r}) - {self.game.name}"
+
 
 class Unit(models.Model):
     UNIT_TYPES = [
@@ -87,6 +96,9 @@ class Unit(models.Model):
     movement = models.IntegerField(default=2)
     last_action_turn = models.PositiveIntegerField(default=0)
     queued_action = models.JSONField(null=True, blank=True)
+
+    def __str__(self):
+        return f"{self.get_unit_type_display()} - {self.nation.name} ({self.q}, {self.r})"
 
 
 class Settlement(models.Model):
@@ -106,6 +118,9 @@ class Settlement(models.Model):
     last_action_turn = models.PositiveIntegerField(default=0)
     queued_action = models.JSONField(null=True, blank=True)
 
+    def __str__(self):
+        return f"{self.name} ({self.get_tier_display()}) - {self.nation.name}"
+
     class Meta:
         unique_together = ("game", "q", "r")
 
@@ -115,6 +130,9 @@ class ChatMessage(models.Model):
     user = models.ForeignKey(User, on_delete=models.CASCADE)
     text = models.TextField()
     created_at = models.DateTimeField(auto_now_add=True)
+
+    def __str__(self):
+        return f"{self.user.username}: {self.text[:20]}{'...' if len(self.text) > 20 else ''}"
 
     class Meta:
         ordering = ["created_at"]
@@ -131,6 +149,9 @@ class Notification(models.Model):
     game = models.ForeignKey(Game, on_delete=models.CASCADE, null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
     is_read = models.BooleanField(default=False)
+
+    def __str__(self):
+        return f"{self.get_notification_type_display()} for {self.user.username}"
 
     class Meta:
         ordering = ["-created_at"]
