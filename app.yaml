@@ -17,7 +17,19 @@ services:
   - key: ALLOWED_HOSTS
     scope: RUN_TIME
     value: "*"
-  databases:
-  - engine: PG
-    name: db
-    version: "15"
+  - key: DATABASE_URL
+    scope: RUN_TIME
+    value: "postgres://user:password@host:port/dbname"
+jobs:
+- name: migrate
+  kind: PRE_DEPLOY
+  run_command: cd project && python manage.py migrate
+  source_dir: /
+  envs:
+  - key: DATABASE_URL
+    scope: RUN_TIME
+    value: "postgres://user:password@host:port/dbname"
+databases:
+- engine: PG
+  name: db
+  version: "15"
