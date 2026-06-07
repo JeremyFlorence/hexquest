@@ -1,0 +1,75 @@
+{% load static %}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Friends - HexQuest</title>
+    <link rel="stylesheet" href="{% static 'hexquest/css/base.css' %}">
+</head>
+<body>
+<main>
+    <h1>Friends List</h1>
+
+    {% if messages %}
+        <div class="messages" style="margin-bottom: 24px;">
+            {% for message in messages %}
+                <div class="message {{ message.tags }}" style="padding: 12px; border-radius: 8px; background: {% if message.tags == 'success' %}#065f46{% elif message.tags == 'danger' or message.tags == 'error' %}#991b1b{% else %}#1e293b{% endif %}; border: 1px solid {% if message.tags == 'success' %}#059669{% elif message.tags == 'danger' or message.tags == 'error' %}#dc2626{% else %}#334155{% endif %}; margin-bottom: 8px;">
+                    {{ message }}
+                </div>
+            {% endfor %}
+        </div>
+    {% endif %}
+
+    <section>
+        <h2>Your Friends</h2>
+        {% if friends %}
+            <div style="display: grid; gap: 12px;">
+                {% for friendship in friends %}
+                    <div class="game-card" style="display: flex; justify-content: space-between; align-items: center;">
+                        <span>{{ friendship.friend.username }}</span>
+                        <form method="post">
+                            {% csrf_token %}
+                            <input type="hidden" name="action" value="remove_friend">
+                            <input type="hidden" name="friendship_id" value="{{ friendship.id }}">
+                            <button type="submit" class="danger" style="padding: 4px 12px; font-size: 14px;">Remove</button>
+                        </form>
+                    </div>
+                {% endfor %}
+            </div>
+        {% else %}
+            <p class="muted">You haven't added any friends yet.</p>
+        {% endif %}
+    </section>
+
+    <section style="margin-top: 40px;">
+        <h2>Add Friends</h2>
+        <form method="get" style="display: flex; gap: 8px; margin-bottom: 20px;">
+            <input type="text" name="q" value="{{ search_query }}" placeholder="Search for users..." style="flex: 1;">
+            <button type="submit" class="secondary">Search</button>
+        </form>
+
+        {% if available_users %}
+            <div style="display: grid; gap: 12px;">
+                {% for user in available_users %}
+                    <div class="game-card" style="display: flex; justify-content: space-between; align-items: center;">
+                        <span>{{ user.username }}</span>
+                        <form method="post">
+                            {% csrf_token %}
+                            <input type="hidden" name="action" value="add_friend">
+                            <input type="hidden" name="username" value="{{ user.username }}">
+                            <button type="submit">Add Friend</button>
+                        </form>
+                    </div>
+                {% endfor %}
+            </div>
+        {% elif search_query %}
+            <p class="muted">No users found matching "{{ search_query }}".</p>
+        {% endif %}
+    </section>
+
+    <p style="text-align: center; margin-top: 32px;">
+        <a href="{% url 'hexquest:home' %}" style="color: #cbd5e1; text-decoration: none;">&larr; Back to Home</a>
+    </p>
+</main>
+</body>
+</html>

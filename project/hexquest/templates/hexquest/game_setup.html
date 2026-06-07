@@ -118,6 +118,7 @@
         <h3>Invite Player</h3>
         {% if game.creator == request.user %}
             {% if available_users %}
+                <p class="muted">You can only invite users who are on your <a href="{% url 'hexquest:friends_list' %}" style="color: #38bdf8;">friends list</a>.</p>
                 <form method="post" class="invite-form">
                     {% csrf_token %}
                     <input type="hidden" name="action" value="invite_player">
@@ -129,7 +130,7 @@
                     <button type="submit">Invite</button>
                 </form>
             {% else %}
-                <p class="muted">No other players available to invite.</p>
+                <p class="muted">No friends available to invite. <a href="{% url 'hexquest:friends_list' %}" style="color: #38bdf8;">Add some friends!</a></p>
             {% endif %}
         {% else %}
             <p class="muted">Only the game creator can invite players.</p>

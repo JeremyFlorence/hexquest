@@ -11,7 +11,7 @@ from django.utils.crypto import get_random_string
 from django.utils import timezone
 import datetime
 
-from .models import Game, HexTile, Nation, Unit, ChatMessage, Notification, Settlement
+from .models import Game, HexTile, Nation, Unit, ChatMessage, Notification, Settlement, Friendship
 from .worldgen import generate_world
 from project.hexgrid import hex_distance
 
@@ -136,15 +136,19 @@ def game_setup(request, game_id):
             username = request.POST.get("username")
             try:
                 user_to_invite = User.objects.get(username=username)
-                if not game.nations.filter(player=user_to_invite).exists():
-                    # Check if already invited
-                    if not Notification.objects.filter(user=user_to_invite, game=game, notification_type="game_invite").exists():
-                        Notification.objects.create(
-                            user=user_to_invite,
-                            game=game,
-                            notification_type="game_invite",
-                            message=f"{request.user.username} invited you to join the game '{game.name}'"
-                        )
+                # Check if user is a friend
+                if Friendship.objects.filter(user=request.user, friend=user_to_invite).exists():
+                    if not game.nations.filter(player=user_to_invite).exists():
+                        # Check if already invited
+                        if not Notification.objects.filter(user=user_to_invite, game=game, notification_type="game_invite").exists():
+                            Notification.objects.create(
+                                user=user_to_invite,
+                                game=game,
+                                notification_type="game_invite",
+                                message=f"{request.user.username} invited you to join the game '{game.name}'"
+                            )
+                else:
+                    messages.error(request, "You can only invite users who are on your friends list.")
             except User.DoesNotExist:
                 pass # Ideally show an error message
             return redirect("hexquest:game_setup", game_id=game.id)
@@ -186,7 +190,8 @@ def game_setup(request, game_id):
                 )
             return redirect("hexquest:game_setup", game_id=game.id)
 
-    users = User.objects.exclude(id__in=game.nations.values_list("player_id", flat=True))
+    friend_ids = Friendship.objects.filter(user=request.user).values_list("friend_id", flat=True)
+    users = User.objects.filter(id__in=friend_ids).exclude(id__in=game.nations.values_list("player_id", flat=True))
     chat_messages = game.chat_messages.all().select_related("user")
     
     return render(
@@ -682,3 +687,44 @@ def cancel_action(request, game_id):
     obj.save()
 
     return JsonResponse({"status": "ok"})
+
+
+@login_required
+def friends_list(request):
+    if request.method == "POST":
+        action = request.POST.get("action")
+        if action == "add_friend":
+            username = request.POST.get("username")
+            try:
+                friend_user = User.objects.get(username=username)
+                if friend_user == request.user:
+                    messages.error(request, "You cannot add yourself as a friend.")
+                elif Friendship.objects.filter(user=request.user, friend=friend_user).exists():
+                    messages.warning(request, f"You are already friends with {username}.")
+                else:
+                    Friendship.objects.create(user=request.user, friend=friend_user)
+                    messages.success(request, f"Added {username} as a friend.")
+            except User.DoesNotExist:
+                messages.error(request, f"User {username} not found.")
+        elif action == "remove_friend":
+            friendship_id = request.POST.get("friendship_id")
+            friendship = get_object_or_404(Friendship, id=friendship_id, user=request.user)
+            friend_username = friendship.friend.username
+            friendship.delete()
+            messages.success(request, f"Removed {friend_username} from friends.")
+        return redirect("hexquest:friends_list")
+
+    friends = Friendship.objects.filter(user=request.user).select_related("friend")
+    
+    # Simple search: all users except self and current friends
+    friend_ids = friends.values_list("friend_id", flat=True)
+    search_query = request.GET.get("q", "")
+    available_users = []
+    if search_query:
+        available_users = User.objects.filter(username__icontains=search_query).exclude(id=request.user.id).exclude(id__in=friend_ids)[:10]
+
+    return render(request, "hexquest/friends.html", {
+        "friends": friends,
+        "available_users": available_users,
+        "search_query": search_query,
+    })
