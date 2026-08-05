@@ -8,6 +8,11 @@ document.addEventListener('DOMContentLoaded', () => {
     const nationList = document.getElementById('nation-list');
     const chatForm = document.getElementById('chat-form');
     const chatInput = document.getElementById('chat-input');
+    const settingsForm = document.querySelector('form[action="update_settings"]') || document.querySelector('input[name="action"][value="update_settings"]')?.form;
+    const inviteForm = document.querySelector('.invite-form');
+    const nationSettingsForm = document.querySelector('input[name="action"][value="update_nation"]')?.form;
+    const gameNameDisplay = document.querySelector('h1');
+    const settingsReadonly = document.querySelector('.settings-readonly');
 
     // Apply colors to swatches
     function applyColors() {
@@ -17,36 +22,40 @@ document.addEventListener('DOMContentLoaded', () => {
     }
     applyColors();
 
-    // Scroll chat to bottom
-    if (chatMessages) {
-        chatMessages.scrollTop = chatMessages.scrollHeight;
-    }
-
-    // Handle chat submission via AJAX to avoid page reload
-    if (chatForm) {
-        chatForm.onsubmit = async (e) => {
+    async function handleFormSubmit(form, onSuccess) {
+        if (!form) return;
+        form.onsubmit = async (e) => {
             e.preventDefault();
-            const text = chatInput.value;
-            if (!text) return;
-
-            const formData = new FormData(chatForm);
-            chatInput.value = '';
-
+            const formData = new FormData(form);
             try {
-                await fetch("", {
+                const response = await fetch("", {
                     method: 'POST',
                     body: formData,
                     headers: {
                         'X-Requested-With': 'XMLHttpRequest'
                     }
                 });
-                // Update will pick up the new message
-                fetchUpdates();
+                if (response.ok) {
+                    if (onSuccess) onSuccess(form);
+                    fetchUpdates();
+                } else {
+                    const data = await response.json();
+                    if (data.message) alert(data.message);
+                }
             } catch (err) {
-                console.error("Failed to send message", err);
+                console.error("Form submission failed", err);
             }
         };
     }
+
+    handleFormSubmit(chatForm, (form) => {
+        chatInput.value = '';
+    });
+    handleFormSubmit(settingsForm);
+    handleFormSubmit(inviteForm);
+    handleFormSubmit(nationSettingsForm);
+
+    // Scroll chat to bottom
 
     async function fetchUpdates() {
         try {
@@ -64,6 +73,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
             // Update nations
             if (data.nations && nationList) {
+                const currentUserId = document.querySelector('input[name="action"][value="update_nation"]')?.form ? true : false;
                 nationList.innerHTML = data.nations.map(n => `
                     <li class="nation-item">
                         <div class="color-swatch" data-color="${n.color}"></div>
@@ -74,6 +84,52 @@ document.addEventListener('DOMContentLoaded', () => {
                     </li>
                 `).join('');
                 applyColors();
+            }
+
+            // Update settings
+            if (data.settings) {
+                if (gameNameDisplay) {
+                    gameNameDisplay.textContent = `Game Setup: ${data.settings.name}`;
+                }
+                
+                if (settingsForm) {
+                    const nameInput = settingsForm.querySelector('#name');
+                    if (nameInput && document.activeElement !== nameInput) nameInput.value = data.settings.name;
+                    
+                    const widthInput = settingsForm.querySelector('#width');
+                    if (widthInput && document.activeElement !== widthInput) widthInput.value = data.settings.width;
+                    
+                    const heightInput = settingsForm.querySelector('#height');
+                    if (heightInput && document.activeElement !== heightInput) heightInput.value = data.settings.height;
+                    
+                    const seedInput = settingsForm.querySelector('#seed');
+                    if (seedInput && document.activeElement !== seedInput) seedInput.value = data.settings.seed;
+                    
+                    const timerInput = settingsForm.querySelector('#turn_timer');
+                    if (timerInput && document.activeElement !== timerInput) timerInput.value = data.settings.turn_timer;
+                    
+                    const goldInput = settingsForm.querySelector('#starting_gold');
+                    if (goldInput && document.activeElement !== goldInput) goldInput.value = data.settings.starting_gold;
+                    
+                    const foodInput = settingsForm.querySelector('#starting_food');
+                    if (foodInput && document.activeElement !== foodInput) foodInput.value = data.settings.starting_food;
+                    
+                    const settlersInput = settingsForm.querySelector('#starting_settlers');
+                    if (settlersInput && document.activeElement !== settlersInput) settlersInput.value = data.settings.starting_settlers;
+                }
+
+                if (settingsReadonly) {
+                    settingsReadonly.innerHTML = `
+                        <p><strong>Game Name:</strong> ${data.settings.name}</p>
+                        <p><strong>Map Size:</strong> ${data.settings.width} x ${data.settings.height}</p>
+                        <p><strong>Map Seed:</strong> ${data.settings.seed}</p>
+                        <p><strong>Turn Timer:</strong> ${data.settings.turn_timer} seconds</p>
+                        <p><strong>Starting Gold:</strong> ${data.settings.starting_gold}</p>
+                        <p><strong>Starting Food:</strong> ${data.settings.starting_food}</p>
+                        <p><strong>Starting Settlers:</strong> ${data.settings.starting_settlers}</p>
+                        <p class="muted">Only the game creator can change settings.</p>
+                    `;
+                }
             }
 
             // Update chat

@@ -128,6 +128,8 @@ def game_setup(request, game_id):
             game.starting_food = int(request.POST.get("starting_food", game.starting_food))
             game.starting_settlers = int(request.POST.get("starting_settlers", game.starting_settlers))
             game.save()
+            if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
+                return JsonResponse({"status": "ok"})
             return redirect("hexquest:game_setup", game_id=game.id)
             
         elif action == "invite_player":
@@ -150,7 +152,10 @@ def game_setup(request, game_id):
                 else:
                     messages.error(request, "You can only invite users who are on your friends list.")
             except User.DoesNotExist:
-                pass # Ideally show an error message
+                if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
+                    return JsonResponse({"status": "error", "message": "User does not exist"}, status=404)
+            if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
+                return JsonResponse({"status": "ok"})
             return redirect("hexquest:game_setup", game_id=game.id)
 
         elif action == "start_game":
@@ -178,6 +183,8 @@ def game_setup(request, game_id):
             nation.name = request.POST.get("nation_name", nation.name)
             nation.color = request.POST.get("color", nation.color)
             nation.save()
+            if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
+                return JsonResponse({"status": "ok"})
             return redirect("hexquest:game_setup", game_id=game.id)
 
         elif action == "send_chat":
@@ -457,6 +464,16 @@ def game_setup_updates(request, game_id):
         "messages": messages,
         "nations": nations,
         "game_active": game.is_active,
+        "settings": {
+            "name": game.name,
+            "width": game.width,
+            "height": game.height,
+            "seed": game.seed,
+            "turn_timer": game.turn_timer,
+            "starting_gold": game.starting_gold,
+            "starting_food": game.starting_food,
+            "starting_settlers": game.starting_settlers,
+        }
     })
 
 
