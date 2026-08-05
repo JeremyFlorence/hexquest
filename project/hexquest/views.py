@@ -315,14 +315,22 @@ def process_turn_end(game):
                     tile.settlement = settlement
                     tile.save()
                     from project.hexgrid import hex_neighbors
+                    builder_placed = False
                     for n_q, n_r in hex_neighbors(tile.q, tile.r):
                         adj_tile = HexTile.objects.filter(game=game, q=n_q, r=n_r).first()
                         if adj_tile and not adj_tile.owner and adj_tile.terrain != "water":
                             adj_tile.owner = unit.nation
                             adj_tile.settlement = settlement
                             adj_tile.save()
-                    unit.delete()
-                    continue # Unit deleted, don't save
+                            # Place builder on first available adjacent tile
+                            if not builder_placed:
+                                unit.q = n_q
+                                unit.r = n_r
+                                builder_placed = True
+                    unit.unit_type = 'builder'
+                    unit.queued_action = None
+                    unit.save()
+                    continue # Unit converted to builder, don't save again
         unit.save()
 
     # Process queued actions for settlements

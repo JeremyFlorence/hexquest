@@ -14,6 +14,9 @@ document.addEventListener('DOMContentLoaded', () => {
     const gameNameDisplay = document.querySelector('h1');
     const settingsReadonly = document.querySelector('.settings-readonly');
 
+    // Track modified form inputs to prevent polling from overwriting unsaved changes
+    const modifiedInputs = new Set();
+
     // Apply colors to swatches
     function applyColors() {
         document.querySelectorAll('.color-swatch[data-color]').forEach(el => {
@@ -21,6 +24,16 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
     applyColors();
+
+    // Track when settings form inputs are modified
+    if (settingsForm) {
+        const inputs = settingsForm.querySelectorAll('input[type="text"], input[type="number"]');
+        inputs.forEach(input => {
+            input.addEventListener('input', () => {
+                modifiedInputs.add(input.id);
+            });
+        });
+    }
 
     async function handleFormSubmit(form, onSuccess) {
         if (!form) return;
@@ -37,6 +50,10 @@ document.addEventListener('DOMContentLoaded', () => {
                 });
                 if (response.ok) {
                     if (onSuccess) onSuccess(form);
+                    // Clear modified inputs after successful save
+                    if (form === settingsForm) {
+                        modifiedInputs.clear();
+                    }
                     fetchUpdates();
                 } else {
                     const data = await response.json();
@@ -94,28 +111,28 @@ document.addEventListener('DOMContentLoaded', () => {
                 
                 if (settingsForm) {
                     const nameInput = settingsForm.querySelector('#name');
-                    if (nameInput && document.activeElement !== nameInput) nameInput.value = data.settings.name;
+                    if (nameInput && !modifiedInputs.has('name')) nameInput.value = data.settings.name;
                     
                     const widthInput = settingsForm.querySelector('#width');
-                    if (widthInput && document.activeElement !== widthInput) widthInput.value = data.settings.width;
+                    if (widthInput && !modifiedInputs.has('width')) widthInput.value = data.settings.width;
                     
                     const heightInput = settingsForm.querySelector('#height');
-                    if (heightInput && document.activeElement !== heightInput) heightInput.value = data.settings.height;
+                    if (heightInput && !modifiedInputs.has('height')) heightInput.value = data.settings.height;
                     
                     const seedInput = settingsForm.querySelector('#seed');
-                    if (seedInput && document.activeElement !== seedInput) seedInput.value = data.settings.seed;
+                    if (seedInput && !modifiedInputs.has('seed')) seedInput.value = data.settings.seed;
                     
                     const timerInput = settingsForm.querySelector('#turn_timer');
-                    if (timerInput && document.activeElement !== timerInput) timerInput.value = data.settings.turn_timer;
+                    if (timerInput && !modifiedInputs.has('turn_timer')) timerInput.value = data.settings.turn_timer;
                     
                     const goldInput = settingsForm.querySelector('#starting_gold');
-                    if (goldInput && document.activeElement !== goldInput) goldInput.value = data.settings.starting_gold;
+                    if (goldInput && !modifiedInputs.has('starting_gold')) goldInput.value = data.settings.starting_gold;
                     
                     const foodInput = settingsForm.querySelector('#starting_food');
-                    if (foodInput && document.activeElement !== foodInput) foodInput.value = data.settings.starting_food;
+                    if (foodInput && !modifiedInputs.has('starting_food')) foodInput.value = data.settings.starting_food;
                     
                     const settlersInput = settingsForm.querySelector('#starting_settlers');
-                    if (settlersInput && document.activeElement !== settlersInput) settlersInput.value = data.settings.starting_settlers;
+                    if (settlersInput && !modifiedInputs.has('starting_settlers')) settlersInput.value = data.settings.starting_settlers;
                 }
 
                 if (settingsReadonly) {

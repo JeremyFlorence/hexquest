@@ -95,44 +95,85 @@ function renderUnits() {
     const groups = document.querySelectorAll(".unit-group");
 
     groups.forEach((group) => {
+        // Clear previous contents so repeated renders don't duplicate elements
+        group.innerHTML = '';
+
         const q = Number(group.dataset.q);
         const r = Number(group.dataset.r);
         const color = group.dataset.color;
         const label = group.dataset.label;
+        const unitType = group.dataset.type;
 
         const position = axialToPixel(q, r);
 
-        const circle = document.createElementNS(
-            "http://www.w3.org/2000/svg",
-            "circle"
-        );
+        if (unitType === "builder") {
+            // Render hammer icon for builder
+            // Hammer head (rectangle)
+            const hammerHead = document.createElementNS("http://www.w3.org/2000/svg", "rect");
+            hammerHead.setAttribute("x", position.x - 6);
+            hammerHead.setAttribute("y", position.y - 8);
+            hammerHead.setAttribute("width", "12");
+            hammerHead.setAttribute("height", "8");
+            hammerHead.setAttribute("fill", color || "#ffffff");
+            hammerHead.setAttribute("stroke", "#020617");
+            hammerHead.setAttribute("stroke-width", "2");
+            hammerHead.setAttribute("rx", "1");
+            hammerHead.setAttribute("class", "unit");
+            hammerHead.style.cursor = "pointer";
+            hammerHead.addEventListener("click", (e) => {
+                e.stopPropagation();
+                selectUnit(group);
+            });
+            
+            // Hammer handle (line)
+            const hammerHandle = document.createElementNS("http://www.w3.org/2000/svg", "line");
+            hammerHandle.setAttribute("x1", position.x);
+            hammerHandle.setAttribute("y1", position.y);
+            hammerHandle.setAttribute("x2", position.x);
+            hammerHandle.setAttribute("y2", position.y + 8);
+            hammerHandle.setAttribute("stroke", "#8b7355");
+            hammerHandle.setAttribute("stroke-width", "2");
+            hammerHandle.setAttribute("stroke-linecap", "round");
+            hammerHandle.style.pointerEvents = "none";
+            
+            group.appendChild(hammerHead);
+            group.appendChild(hammerHandle);
+        } else {
+            // Render standard unit circle
+            const circle = document.createElementNS(
+                "http://www.w3.org/2000/svg",
+                "circle"
+            );
 
-        circle.setAttribute("class", "unit");
-        circle.setAttribute("cx", position.x);
-        circle.setAttribute("cy", position.y);
-        circle.setAttribute("r", "8");
-        circle.setAttribute("fill", color || "#ffffff");
-        circle.setAttribute("stroke", "#020617");
-        circle.setAttribute("stroke-width", "2");
-        circle.style.pointerEvents = "visiblePainted";
+            circle.setAttribute("class", "unit");
+            circle.setAttribute("cx", position.x);
+            circle.setAttribute("cy", position.y);
+            circle.setAttribute("r", "8");
+            circle.setAttribute("fill", color || "#ffffff");
+            circle.setAttribute("stroke", "#020617");
+            circle.setAttribute("stroke-width", "2");
+            circle.style.pointerEvents = "visiblePainted";
 
-        circle.addEventListener("click", (e) => {
-            e.stopPropagation();
-            selectUnit(group);
-        });
+            circle.addEventListener("click", (e) => {
+                e.stopPropagation();
+                selectUnit(group);
+            });
 
-        const text = document.createElementNS(
-            "http://www.w3.org/2000/svg",
-            "text"
-        );
+            const text = document.createElementNS(
+                "http://www.w3.org/2000/svg",
+                "text"
+            );
 
-        text.setAttribute("class", "unit-label");
-        text.setAttribute("x", position.x);
-        text.setAttribute("y", position.y + 1);
-        text.textContent = label;
+            text.setAttribute("class", "unit-label");
+            text.setAttribute("x", position.x);
+            text.setAttribute("y", position.y + 1);
+            text.textContent = label;
 
-        group.appendChild(circle);
-        group.appendChild(text);
+            group.appendChild(circle);
+            group.appendChild(text);
+        }
+
+        // Ensure unit groups are placed on top of hexes/settlements
         svg.appendChild(group);
     });
 }

@@ -85,6 +85,7 @@ class Unit(models.Model):
         ("infantry", "Infantry"),
         ("cavalry", "Cavalry"),
         ("settler", "Settler"),
+        ("builder", "Builder"),
     ]
 
     game = models.ForeignKey(Game, on_delete=models.CASCADE, related_name="units")

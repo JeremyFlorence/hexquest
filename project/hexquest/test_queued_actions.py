@@ -71,8 +71,10 @@ class QueuedActionTests(TestCase):
         # End turn
         process_turn_end(self.game)
         
-        # Unit should be gone, settlement should exist
-        self.assertFalse(Unit.objects.filter(id=self.unit.id).exists())
+        # Unit should be converted to builder at adjacent tile, settlement should exist
+        self.assertTrue(Unit.objects.filter(id=self.unit.id).exists())
+        builder = Unit.objects.get(id=self.unit.id)
+        self.assertEqual(builder.unit_type, 'builder')
         self.assertTrue(Settlement.objects.filter(game=self.game, q=1, r=0).exists())
 
     def test_queue_settlement_upgrade(self):

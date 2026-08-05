@@ -54,8 +54,10 @@ class UnitActionTests(TestCase):
         self.tile_0_0.refresh_from_db()
         self.assertEqual(self.tile_0_0.owner, self.nation)
         
-        # Settler should be consumed
-        self.assertFalse(Unit.objects.filter(id=self.unit.id).exists())
+        # Settler should be converted to builder at adjacent tile
+        self.assertTrue(Unit.objects.filter(id=self.unit.id).exists())
+        builder = Unit.objects.get(id=self.unit.id)
+        self.assertEqual(builder.unit_type, 'builder')
 
         # Settlement should be created
         settlement = Settlement.objects.get(game=self.game, q=0, r=0, nation=self.nation)
