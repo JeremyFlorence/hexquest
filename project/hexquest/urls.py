@@ -17,6 +17,7 @@ urlpatterns = [
     path("games/<int:game_id>/map/", views.game_map, name="game_map"),
     path("games/<int:game_id>/unit/<int:unit_id>/move/", views.unit_move, name="unit_move"),
     path("games/<int:game_id>/unit/<int:unit_id>/settle/", views.unit_settle, name="unit_settle"),
+    path("games/<int:game_id>/unit/<int:unit_id>/build/", views.builder_build, name="builder_build"),
     path("games/<int:game_id>/settlement/<int:settlement_id>/upgrade/", views.upgrade_settlement, name="upgrade_settlement"),
     path("games/<int:game_id>/settlement/<int:settlement_id>/rename/", views.rename_settlement, name="rename_settlement"),
     path("games/<int:game_id>/settlement/<int:settlement_id>/expand/", views.expand_settlement, name="expand_settlement"),

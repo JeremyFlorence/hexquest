@@ -520,6 +520,14 @@ function showUnitActions(id, type, container) {
         settleBtn.onclick = () => showNamingModal("Name Your Settlement", "New Settlement", (name) => performSettle(id, name));
         container.appendChild(settleBtn);
     }
+
+    // Build Action
+    if (type === "builder") {
+        const buildBtn = document.createElement("button");
+        buildBtn.textContent = "Build Wheat Farm";
+        buildBtn.onclick = () => performBuild(id, "wheat_farm");
+        container.appendChild(buildBtn);
+    }
 }
 
 function showMoveTargets(unitGroup) {
@@ -643,6 +651,27 @@ async function performSettle(unitId, name) {
 
     try {
         const response = await fetch(`/games/${gameId}/unit/${unitId}/settle/`, {
+            method: "POST",
+            body: formData
+        });
+        const data = await response.json();
+        if (data.status === "ok" || data.status === "queued") {
+            window.location.reload();
+        } else {
+            alert(data.error);
+        }
+    } catch (err) {
+        console.error(err);
+    }
+}
+
+async function performBuild(unitId, buildingType) {
+    const formData = new FormData();
+    formData.append("csrfmiddlewaretoken", csrfToken);
+    formData.append("type", buildingType);
+
+    try {
+        const response = await fetch(`/games/${gameId}/unit/${unitId}/build/`, {
             method: "POST",
             body: formData
         });

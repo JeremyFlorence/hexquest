@@ -158,6 +158,20 @@ class Notification(models.Model):
         ordering = ["-created_at"]
 
 
+class Building(models.Model):
+    BUILDING_TYPES = [
+        ("wheat_farm", "Wheat Farm"),
+    ]
+
+    game = models.ForeignKey(Game, on_delete=models.CASCADE, related_name="buildings")
+    hex_tile = models.OneToOneField(HexTile, on_delete=models.CASCADE, related_name="building")
+    building_type = models.CharField(max_length=20, choices=BUILDING_TYPES)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    def __str__(self):
+        return f"{self.get_building_type_display()} at ({self.hex_tile.q}, {self.hex_tile.r})"
+
+
 class Friendship(models.Model):
     user = models.ForeignKey(User, on_delete=models.CASCADE, related_name="friendships")
     friend = models.ForeignKey(User, on_delete=models.CASCADE, related_name="friend_of")

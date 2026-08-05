@@ -11,7 +11,7 @@ from django.utils.crypto import get_random_string
 from django.utils import timezone
 import datetime
 
-from .models import Game, HexTile, Nation, Unit, ChatMessage, Notification, Settlement, Friendship
+from .models import Game, HexTile, Nation, Unit, ChatMessage, Notification, Settlement, Friendship, Building
 from .worldgen import generate_world
 from project.hexgrid import hex_distance
 
@@ -331,6 +331,19 @@ def process_turn_end(game):
                     unit.queued_action = None
                     unit.save()
                     continue # Unit converted to builder, don't save again
+        
+        elif action['type'] == 'build':
+            building_type = action['building_type']
+            tile = HexTile.objects.filter(game=game, q=unit.q, r=unit.r).first()
+            if tile and unit.unit_type == 'builder' and tile.owner == unit.nation and tile.terrain == "plains":
+                if not hasattr(tile, 'building') or not tile.building:
+                    Building.objects.create(
+                        game=game,
+                        hex_tile=tile,
+                        building_type=building_type
+                    )
+                    unit.last_action_turn = game.current_turn
+        
         unit.save()
 
     # Process queued actions for settlements
@@ -374,6 +387,12 @@ def process_turn_end(game):
     if activity_occurred:
         game.last_activity_turn = game.current_turn
         game.save()
+
+    # Process resource generation from buildings
+    for building in game.buildings.all():
+        if building.building_type == "wheat_farm":
+            building.hex_tile.owner.food += 2
+            building.hex_tile.owner.save()
 
     # Check for game end condition (3 turns without activity)
     if game.current_turn - game.last_activity_turn >= 3:
@@ -680,6 +699,46 @@ def expand_settlement(request, game_id, settlement_id):
 
     settlement.queued_action = {"type": "expand", "q": q, "r": r}
     settlement.save()
+    return JsonResponse({"status": "queued", "message": "Action queued for next turn"})
+
+
+@login_required
+def builder_build(request, game_id, unit_id):
+    if request.method != "POST":
+        return JsonResponse({"error": "Method not allowed"}, status=405)
+
+    unit = get_object_or_404(Unit, id=unit_id, game_id=game_id)
+    if unit.nation.player != request.user:
+        return HttpResponseForbidden("You do not own this unit")
+
+    if unit.nation.has_ended_turn:
+        return JsonResponse({"error": "You have already ended your turn"}, status=400)
+
+    if unit.queued_action:
+        return JsonResponse({"error": "This unit has already acted this turn"}, status=400)
+
+    if unit.unit_type != "builder":
+        return JsonResponse({"error": "Only builders can build structures"}, status=400)
+
+    building_type = request.POST.get("type")
+    if building_type != "wheat_farm":
+        return JsonResponse({"error": "Unknown building type"}, status=400)
+
+    tile = HexTile.objects.filter(game_id=game_id, q=unit.q, r=unit.r).first()
+    if not tile:
+        return JsonResponse({"error": "Tile not found"}, status=404)
+
+    if tile.owner != unit.nation:
+        return JsonResponse({"error": "You do not own this tile"}, status=400)
+
+    if tile.terrain != "plains":
+        return JsonResponse({"error": "Wheat farms can only be built on plains"}, status=400)
+
+    if hasattr(tile, 'building') and tile.building:
+        return JsonResponse({"error": "A building already exists on this tile"}, status=400)
+
+    unit.queued_action = {"type": "build", "building_type": building_type}
+    unit.save()
     return JsonResponse({"status": "queued", "message": "Action queued for next turn"})
 
 
