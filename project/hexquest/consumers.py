@@ -73,12 +73,51 @@ def _serialize_game_update(game, nation):
     from django.utils import timezone
     remaining_time = int((game.turn_end_time - timezone.now()).total_seconds()) if game.turn_end_time else 0
     return {
+        "is_finished": game.is_finished,
         "current_turn": game.current_turn,
         "remaining_time": max(0, remaining_time),
         "has_ended_turn": nation.has_ended_turn,
         "gold": nation.gold,
         "food": nation.food,
         "unit_count": nation.units.count(),
+        "units": [
+            {
+                "id": u.id,
+                "type": u.unit_type,
+                "q": u.q,
+                "r": u.r,
+                "color": u.nation.color,
+                "label": u.unit_type[0].upper(),
+                "owner_id": u.nation.player.id,
+                "last_action_turn": u.last_action_turn,
+                "queued_action": bool(u.queued_action)
+            } for u in game.units.all()
+        ],
+        "settlements": [
+            {
+                "id": s.id,
+                "q": s.q,
+                "r": s.r,
+                "name": s.name,
+                "tier": s.tier,
+                "color": s.nation.color,
+                "population": s.population,
+                "owner_id": s.nation.player.id,
+                "last_action_turn": s.last_action_turn,
+                "queued_action": bool(s.queued_action)
+            } for s in game.settlements.all()
+        ],
+        "hexes": [
+            {
+                "q": h.q,
+                "r": h.r,
+                "owner": h.owner.name if h.owner else None,
+                "owner_id": h.owner.player.id if h.owner else None,
+                "owner_color": h.owner.color if h.owner else None,
+                "settlement": h.settlement.name if h.settlement else None,
+                "settlement_id": h.settlement.id if h.settlement else None
+            } for h in game.hexes.all()
+        ],
         "queued_actions": [
             {
                 "id": u.id,
@@ -128,11 +167,8 @@ def broadcast_game_update(game, user=None):
                 _user_game_group(game.id, nation.player.id),
                 {"type": "game.update", "payload": payload},
             )
-        # Also notify general group (e.g. for map refresh if needed, though we try to be surgical)
-        async_to_sync(channel_layer.group_send)(
-            _game_group(game.id),
-            {"type": "game.refresh"},
-        )
+        # Note: We removed the game.refresh broadcast to encourage surgical updates.
+        # If observers exist, they might need a general update payload sent to _game_group.
 
 
 class ChatConsumer(AsyncJsonWebsocketConsumer):
@@ -279,6 +315,13 @@ class GameConsumer(AsyncJsonWebsocketConsumer):
     async def game_refresh(self, event):
         """Signal to client to reload or fetch fresh map data if needed."""
         await self.send_json({"type": "game_refresh"})
+
+    async def game_timer_tick(self, event):
+        """Send a timer tick to the client."""
+        await self.send_json({
+            "type": "timer_tick",
+            "remaining_time": event["remaining_time"]
+        })
 
     @database_sync_to_async
     def _get_initial_state(self, user_id, game_id):

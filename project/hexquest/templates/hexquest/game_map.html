@@ -6,26 +6,16 @@
     <title>{{ game.name }} Map</title>
     <link rel="stylesheet" href="{% static 'hexquest/css/base.css' %}">
     <link rel="stylesheet" href="{% static 'hexquest/css/game_map.css' %}">
+    <script src="https://unpkg.com/htmx.org@2.0.1"></script>
 </head>
 <body>
-<header>
+<header hx-get="{% url 'hexquest:game_updates' game.id %}" 
+        hx-trigger="game-updated from:body" 
+        hx-target="#game-meta-wrapper"
+        hx-select="#game-meta-all">
     <h1>{{ game.name }}</h1>
-    <div class="meta">
-        Turn <span id="turn-display">{{ game.current_turn }}</span>
-        <span>|</span>
-        Time: <span id="timer-display">{{ remaining_time }}</span>s
-        <span class="resource">💰 <span id="gold-display">{{ nation.gold }}</span></span>
-        <span class="resource">🍞 <span id="food-display">{{ nation.food }}</span></span>
-        <span class="resource">👥 <span id="units-display">{{ nation.units.count }}</span></span>
-    </div>
-    <div class="actions">
-        <form id="end-turn-form" method="post">
-            {% csrf_token %}
-            <input type="hidden" name="action" value="end_turn">
-            <button type="submit" id="end-turn-btn" {% if nation.has_ended_turn %}disabled{% endif %}>
-                {% if nation.has_ended_turn %}Waiting...{% else %}End Turn{% endif %}
-            </button>
-        </form>
+    <div id="game-meta-wrapper">
+        {% include "hexquest/partials/game_meta.html" %}
     </div>
 </header>
 
@@ -33,6 +23,7 @@
     const gameId = {{ game.id }};
     const gameUpdatesUrl = "{% url 'hexquest:game_updates' game.id %}";
     const cancelActionUrl = "{% url 'hexquest:cancel_action' game.id %}";
+    const gameHistoryUrl = "{% url 'hexquest:game_history' %}";
     const currentUserId = {{ request.user.id }};
     const csrfToken = "{{ csrf_token }}";
     const wsScheme = window.location.protocol === 'https:' ? 'wss://' : 'ws://';
@@ -114,11 +105,14 @@
     </div>
 </div>
 
-<aside id="queued-actions-sidebar" class="sidebar">
+<aside id="queued-actions-sidebar" class="sidebar" 
+       hx-get="{% url 'hexquest:game_updates' game.id %}" 
+       hx-trigger="game-updated from:body" 
+       hx-target="#queued-actions-list" 
+       hx-select="#queued-actions-list"
+       hx-swap="outerHTML">
     <h3>Queued Actions</h3>
-    <ul id="queued-actions-list">
-        <!-- To be populated by JS -->
-    </ul>
+    {% include "hexquest/partials/queued_actions.html" %}
 </aside>
 </div>
 

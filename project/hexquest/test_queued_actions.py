@@ -47,6 +47,8 @@ class QueuedActionTests(TestCase):
         self.assertEqual(self.unit.queued_action, {"type": "move", "q": 1, "r": 0})
 
         # End turn
+        self.nation.has_ended_turn = True
+        self.nation.save()
         process_turn_end(self.game)
         
         self.unit.refresh_from_db()
@@ -56,6 +58,8 @@ class QueuedActionTests(TestCase):
     def test_queue_unit_settle(self):
         # Move first (queued)
         self.client.post(f"/games/{self.game.id}/unit/{self.unit.id}/move/", {"q": 1, "r": 0})
+        self.nation.has_ended_turn = True
+        self.nation.save()
         process_turn_end(self.game)
         self.unit.refresh_from_db()
         self.assertEqual(self.unit.q, 1)
@@ -69,6 +73,8 @@ class QueuedActionTests(TestCase):
         self.assertEqual(self.unit.queued_action, {"type": "settle", "name": "New City"})
 
         # End turn
+        self.nation.has_ended_turn = True
+        self.nation.save()
         process_turn_end(self.game)
         
         # Unit should be converted to builder at adjacent tile, settlement should exist
@@ -95,6 +101,8 @@ class QueuedActionTests(TestCase):
         self.assertEqual(response.json()['status'], 'queued')
 
         # End turn
+        self.nation.has_ended_turn = True
+        self.nation.save()
         process_turn_end(self.game)
         
         settlement.refresh_from_db()
@@ -118,6 +126,8 @@ class QueuedActionTests(TestCase):
         self.assertEqual(response.json()['status'], 'queued')
 
         # End turn
+        self.nation.has_ended_turn = True
+        self.nation.save()
         process_turn_end(self.game)
         
         self.tile_1_0.refresh_from_db()

@@ -17,6 +17,8 @@ const terrainColors = {
 };
 
 function axialToPixel(q, r) {
+    q = Number(q) || 0;
+    r = Number(r) || 0;
     const x = size * Math.sqrt(3) * (q + r / 2);
     const y = size * 1.5 * r;
 
@@ -91,225 +93,188 @@ function renderHexes() {
 }
 
 function renderUnits() {
-    const svg = document.getElementById("map");
     const groups = document.querySelectorAll(".unit-group");
-
     groups.forEach((group) => {
-        // Clear previous contents so repeated renders don't duplicate elements
-        group.innerHTML = '';
+        renderSingleUnit(group);
+    });
+}
 
-        const q = Number(group.dataset.q);
-        const r = Number(group.dataset.r);
-        const color = group.dataset.color;
-        const label = group.dataset.label;
-        const unitType = group.dataset.type;
+function renderSingleUnit(group) {
+    if (!group) return;
+    const svg = document.getElementById("map");
+    if (!svg) return;
 
-        const position = axialToPixel(q, r);
+    const q = group.dataset.q;
+    const r = group.dataset.r;
+    if (q === undefined || r === undefined) return;
 
-        if (unitType === "builder") {
-            // Render hammer icon for builder
-            // Hammer head (rectangle)
-            const hammerHead = document.createElementNS("http://www.w3.org/2000/svg", "rect");
-            hammerHead.setAttribute("x", position.x - 6);
-            hammerHead.setAttribute("y", position.y - 8);
-            hammerHead.setAttribute("width", "12");
-            hammerHead.setAttribute("height", "8");
-            hammerHead.setAttribute("fill", color || "#ffffff");
-            hammerHead.setAttribute("stroke", "#020617");
-            hammerHead.setAttribute("stroke-width", "2");
-            hammerHead.setAttribute("rx", "1");
+    const color = group.dataset.color;
+    const label = group.dataset.label || "?";
+    const unitType = group.dataset.type;
+
+    const position = axialToPixel(q, r);
+
+    if (unitType === "builder") {
+        // Clear non-builder elements if they exist
+        if (group.querySelector("circle")) {
+            group.innerHTML = '';
+        }
+
+        // Hammer head (rectangle)
+        let hammerHead = group.querySelector("rect.unit");
+        if (!hammerHead) {
+            hammerHead = document.createElementNS("http://www.w3.org/2000/svg", "rect");
             hammerHead.setAttribute("class", "unit");
             hammerHead.style.cursor = "pointer";
             hammerHead.addEventListener("click", (e) => {
                 e.stopPropagation();
                 selectUnit(group);
             });
-            
-            // Hammer handle (line)
-            const hammerHandle = document.createElementNS("http://www.w3.org/2000/svg", "line");
-            hammerHandle.setAttribute("x1", position.x);
-            hammerHandle.setAttribute("y1", position.y);
-            hammerHandle.setAttribute("x2", position.x);
-            hammerHandle.setAttribute("y2", position.y + 8);
-            hammerHandle.setAttribute("stroke", "#8b7355");
-            hammerHandle.setAttribute("stroke-width", "2");
-            hammerHandle.setAttribute("stroke-linecap", "round");
-            hammerHandle.style.pointerEvents = "none";
-            
             group.appendChild(hammerHead);
+        }
+        hammerHead.setAttribute("x", position.x - 6);
+        hammerHead.setAttribute("y", position.y - 8);
+        hammerHead.setAttribute("width", "12");
+        hammerHead.setAttribute("height", "8");
+        hammerHead.setAttribute("fill", color || "#ffffff");
+        hammerHead.setAttribute("stroke", "#020617");
+        hammerHead.setAttribute("stroke-width", "2");
+        hammerHead.setAttribute("rx", "1");
+        
+        // Hammer handle (line)
+        let hammerHandle = group.querySelector("line");
+        if (!hammerHandle) {
+            hammerHandle = document.createElementNS("http://www.w3.org/2000/svg", "line");
+            hammerHandle.style.pointerEvents = "none";
             group.appendChild(hammerHandle);
-        } else {
-            // Render standard unit circle
-            const circle = document.createElementNS(
-                "http://www.w3.org/2000/svg",
-                "circle"
-            );
+        }
+        hammerHandle.setAttribute("x1", position.x);
+        hammerHandle.setAttribute("y1", position.y);
+        hammerHandle.setAttribute("x2", position.x);
+        hammerHandle.setAttribute("y2", position.y + 8);
+        hammerHandle.setAttribute("stroke", "#8b7355");
+        hammerHandle.setAttribute("stroke-width", "2");
+        hammerHandle.setAttribute("stroke-linecap", "round");
+    } else {
+        // Clear builder elements if they exist
+        if (group.querySelector("rect.unit")) {
+            group.innerHTML = '';
+        }
 
+        // Render standard unit circle
+        let circle = group.querySelector("circle.unit");
+        if (!circle) {
+            circle = document.createElementNS("http://www.w3.org/2000/svg", "circle");
             circle.setAttribute("class", "unit");
-            circle.setAttribute("cx", position.x);
-            circle.setAttribute("cy", position.y);
-            circle.setAttribute("r", "8");
-            circle.setAttribute("fill", color || "#ffffff");
-            circle.setAttribute("stroke", "#020617");
-            circle.setAttribute("stroke-width", "2");
             circle.style.pointerEvents = "visiblePainted";
-
             circle.addEventListener("click", (e) => {
                 e.stopPropagation();
                 selectUnit(group);
             });
-
-            const text = document.createElementNS(
-                "http://www.w3.org/2000/svg",
-                "text"
-            );
-
-            text.setAttribute("class", "unit-label");
-            text.setAttribute("x", position.x);
-            text.setAttribute("y", position.y + 1);
-            text.textContent = label;
-
             group.appendChild(circle);
+        }
+        circle.setAttribute("cx", position.x);
+        circle.setAttribute("cy", position.y);
+        circle.setAttribute("r", "8");
+        circle.setAttribute("fill", color || "#ffffff");
+        circle.setAttribute("stroke", "#020617");
+        circle.setAttribute("stroke-width", "2");
+
+        let text = group.querySelector("text.unit-label");
+        if (!text) {
+            text = document.createElementNS("http://www.w3.org/2000/svg", "text");
+            text.setAttribute("class", "unit-label");
             group.appendChild(text);
         }
+        text.setAttribute("x", position.x);
+        text.setAttribute("y", position.y + 1);
+        text.textContent = label;
+    }
 
-        // Ensure unit groups are placed on top of hexes/settlements
-        svg.appendChild(group);
-    });
+    // Ensure unit groups are placed on top of hexes/settlements
+    svg.appendChild(group);
 }
 
 function renderSettlements() {
-    const svg = document.getElementById("map");
     const groups = document.querySelectorAll(".settlement-group");
-
     groups.forEach((group) => {
-        const q = Number(group.dataset.q);
-        const r = Number(group.dataset.r);
-        const color = group.dataset.color;
-        const name = group.dataset.name;
-        const tier = group.dataset.tier;
-        const population = group.dataset.population;
+        renderSingleSettlement(group);
+    });
+}
 
-        const position = axialToPixel(q, r);
-        let icon;
+function renderSingleSettlement(group) {
+    const svg = document.getElementById("map");
+    const q = Number(group.dataset.q);
+    const r = Number(group.dataset.r);
+    const color = group.dataset.color;
+    const name = group.dataset.name;
+    const tier = group.dataset.tier;
+    const population = group.dataset.population;
 
+    const position = axialToPixel(q, r);
+    
+    let icon = group.querySelector(".settlement");
+    let needsNewIcon = false;
+
+    if (!icon) {
+        needsNewIcon = true;
+    } else {
+        // Check if tier changed, requiring a different shape
+        const currentTier = icon.tagName.toLowerCase();
+        if (tier === "village" && currentTier !== "circle") needsNewIcon = true;
+        else if (tier === "town" && currentTier !== "rect") needsNewIcon = true;
+        else if (tier === "city" && currentTier !== "path") needsNewIcon = true;
+    }
+
+    if (needsNewIcon) {
+        group.innerHTML = '';
         if (tier === "village") {
-            // Circle icon
             icon = document.createElementNS("http://www.w3.org/2000/svg", "circle");
-            icon.setAttribute("cx", position.x);
-            icon.setAttribute("cy", position.y);
             icon.setAttribute("r", "7");
         } else if (tier === "town") {
-            // Square icon
             icon = document.createElementNS("http://www.w3.org/2000/svg", "rect");
-            icon.setAttribute("x", position.x - 7);
-            icon.setAttribute("y", position.y - 7);
             icon.setAttribute("width", "14");
             icon.setAttribute("height", "14");
         } else if (tier === "city") {
-            // Star icon
             icon = document.createElementNS("http://www.w3.org/2000/svg", "path");
-            // A simple 5-pointed star
-            const points = [];
-            for (let i = 0; i < 10; i++) {
-                const angle = (Math.PI / 5) * i - Math.PI / 2;
-                const radius = i % 2 === 0 ? 10 : 4;
-                points.push(`${position.x + radius * Math.cos(angle)},${position.y + radius * Math.sin(angle)}`);
-            }
-            icon.setAttribute("d", `M ${points.join(" L ")} Z`);
         }
-
         icon.setAttribute("class", "settlement");
-        icon.setAttribute("fill", color || "#ffffff");
-        icon.setAttribute("stroke", "#020617");
-        icon.setAttribute("stroke-width", "2");
         icon.style.cursor = "pointer";
-
         icon.addEventListener("click", (e) => {
             e.stopPropagation();
             selectSettlement(group);
         });
-
-        const title = document.createElementNS(
-            "http://www.w3.org/2000/svg",
-            "title"
-        );
-        title.textContent = `${name} (${tier}, Pop: ${population})`;
-        icon.appendChild(title);
-
         group.appendChild(icon);
-        svg.appendChild(group);
-    });
-}
-
-function updateQueuedActionsList(actions) {
-    const list = document.getElementById("queued-actions-list");
-    list.innerHTML = "";
-
-    if (!actions || actions.length === 0) {
-        const empty = document.createElement("li");
-        empty.textContent = "No actions queued.";
-        empty.style.color = "#94a3b8";
-        empty.style.fontSize = "14px";
-        list.appendChild(empty);
-        return;
     }
 
-    actions.forEach(action => {
-        const item = document.createElement("li");
-        item.className = "queued-action-item";
-
-        const title = document.createElement("span");
-        title.className = "action-title";
-        const label = action.type === "unit" ? action.unit_type : action.name;
-        title.textContent = `${label} (${action.q}, ${action.r})`;
-
-        const details = document.createElement("span");
-        details.className = "action-details";
-        
-        let actionDesc = "";
-        if (action.action.type === "move") {
-            actionDesc = `Move to (${action.action.q}, ${action.action.r})`;
-        } else if (action.action.type === "settle") {
-            actionDesc = `Settle: ${action.action.name}`;
-        } else if (action.action.type === "upgrade") {
-            actionDesc = "Upgrade settlement";
-        } else if (action.action.type === "expand") {
-            actionDesc = `Expand to (${action.action.q}, ${action.action.r})`;
+    if (tier === "village") {
+        icon.setAttribute("cx", position.x);
+        icon.setAttribute("cy", position.y);
+    } else if (tier === "town") {
+        icon.setAttribute("x", position.x - 7);
+        icon.setAttribute("y", position.y - 7);
+    } else if (tier === "city") {
+        const points = [];
+        for (let i = 0; i < 10; i++) {
+            const angle = (Math.PI / 5) * i - Math.PI / 2;
+            const radius = i % 2 === 0 ? 10 : 4;
+            points.push(`${position.x + radius * Math.cos(angle)},${position.y + radius * Math.sin(angle)}`);
         }
-        details.textContent = actionDesc;
-
-        const cancelBtn = document.createElement("button");
-        cancelBtn.className = "cancel-action-btn";
-        cancelBtn.textContent = "Cancel";
-        cancelBtn.onclick = () => cancelQueuedAction(action.id, action.type);
-
-        item.appendChild(title);
-        item.appendChild(details);
-        item.appendChild(cancelBtn);
-        list.appendChild(item);
-    });
-}
-
-async function cancelQueuedAction(id, type) {
-    try {
-        const response = await fetch(cancelActionUrl, {
-            method: "POST",
-            headers: {
-                "Content-Type": "application/json",
-                "X-CSRFToken": csrfToken
-            },
-            body: JSON.stringify({ id, type })
-        });
-        const data = await response.json();
-        if (data.status === "ok") {
-            window.location.reload();
-        } else {
-            alert(data.error);
-        }
-    } catch (err) {
-        console.error(err);
+        icon.setAttribute("d", `M ${points.join(" L ")} Z`);
     }
+
+    icon.setAttribute("fill", color || "#ffffff");
+    icon.setAttribute("stroke", "#020617");
+    icon.setAttribute("stroke-width", "2");
+
+    let title = icon.querySelector("title");
+    if (!title) {
+        title = document.createElementNS("http://www.w3.org/2000/svg", "title");
+        icon.appendChild(title);
+    }
+    title.textContent = `${name} (${tier}, Pop: ${population})`;
+
+    svg.appendChild(group);
 }
 
 function closeActionMenu() {
@@ -432,7 +397,7 @@ async function upgradeSettlement(settlementId) {
         });
         const data = await response.json();
         if (data.status === "ok" || data.status === "queued") {
-            window.location.reload();
+            closeActionMenu();
         } else {
             alert(data.error);
         }
@@ -606,7 +571,7 @@ async function performExpand(settlementId, q, r) {
         });
         const data = await response.json();
         if (data.status === "ok" || data.status === "queued") {
-            window.location.reload();
+            closeActionMenu();
         } else {
             alert(data.error);
         }
@@ -635,7 +600,7 @@ async function performMove(unitId, q, r) {
         });
         const data = await response.json();
         if (data.status === "ok" || data.status === "queued") {
-            window.location.reload();
+            closeActionMenu();
         } else {
             alert(data.error);
         }
@@ -656,7 +621,7 @@ async function performSettle(unitId, name) {
         });
         const data = await response.json();
         if (data.status === "ok" || data.status === "queued") {
-            window.location.reload();
+            closeActionMenu();
         } else {
             alert(data.error);
         }
@@ -677,7 +642,7 @@ async function performBuild(unitId, buildingType) {
         });
         const data = await response.json();
         if (data.status === "ok" || data.status === "queued") {
-            window.location.reload();
+            closeActionMenu();
         } else {
             alert(data.error);
         }
@@ -741,7 +706,7 @@ async function performRename(settlementId, newName) {
         });
         const data = await response.json();
         if (data.status === "ok" || data.status === "queued") {
-            window.location.reload();
+            closeActionMenu();
         } else {
             alert(data.error);
         }
@@ -764,38 +729,147 @@ document.addEventListener('DOMContentLoaded', () => {
 
     let gameSocket = null;
 
+    function updateUnits(units) {
+        const svg = document.getElementById("map");
+        const existingGroups = new Map();
+        document.querySelectorAll(".unit-group").forEach(g => {
+            existingGroups.set(String(g.dataset.id), g);
+        });
+
+        const currentIds = new Set(units.map(u => String(u.id)));
+
+        // Remove units that no longer exist
+        existingGroups.forEach((group, id) => {
+            if (!currentIds.has(id)) {
+                group.remove();
+            }
+        });
+
+        // Add or update units
+        units.forEach(u => {
+            let group = existingGroups.get(String(u.id));
+            if (!group) {
+                group = document.createElementNS("http://www.w3.org/2000/svg", "g");
+                group.setAttribute("class", "unit-group");
+                group.setAttribute("id", `unit-${u.id}`);
+                // Will be appended in renderSingleUnit
+            }
+
+            // Update dataset
+            group.dataset.id = u.id;
+            group.dataset.type = u.type;
+            group.dataset.q = u.q;
+            group.dataset.r = u.r;
+            group.dataset.color = u.color;
+            group.dataset.ownerId = u.owner_id;
+            group.dataset.label = u.label;
+            group.dataset.lastActionTurn = u.last_action_turn;
+            group.dataset.queuedAction = u.queued_action;
+
+            // Re-render the individual unit
+            renderSingleUnit(group);
+        });
+    }
+
+    function updateSettlements(settlements) {
+        const svg = document.getElementById("map");
+        const existingGroups = new Map();
+        document.querySelectorAll(".settlement-group").forEach(g => {
+            existingGroups.set(String(g.dataset.id), g);
+        });
+
+        // Add or update settlements
+        settlements.forEach(s => {
+            let group = existingGroups.get(String(s.id));
+            if (!group) {
+                group = document.createElementNS("http://www.w3.org/2000/svg", "g");
+                group.setAttribute("class", "settlement-group");
+                group.setAttribute("id", `settlement-${s.id}`);
+                // Will be appended in renderSingleSettlement
+            }
+
+            // Update dataset
+            group.dataset.id = s.id;
+            group.dataset.q = s.q;
+            group.dataset.r = s.r;
+            group.dataset.color = s.color;
+            group.dataset.name = s.name;
+            group.dataset.tier = s.tier;
+            group.dataset.population = s.population;
+            group.dataset.ownerId = s.owner_id;
+            group.dataset.lastActionTurn = s.last_action_turn;
+            group.dataset.queuedAction = s.queued_action;
+
+            // Re-render the individual settlement
+            renderSingleSettlement(group);
+        });
+    }
+
+    function updateHexes(hexes) {
+        hexes.forEach(h => {
+            const group = document.querySelector(`.hex-group[data-q="${h.q}"][data-r="${h.r}"]`);
+            if (group) {
+                group.dataset.owner = h.owner || "";
+                group.dataset.ownerId = h.owner_id || "";
+                group.dataset.ownerColor = h.owner_color || "";
+                group.dataset.settlement = h.settlement || "";
+                group.dataset.settlementId = h.settlement_id || "";
+
+                // Update the polygon stroke
+                const polygon = group.querySelector("polygon");
+                if (polygon) {
+                    if (h.owner_color) {
+                        polygon.style.setProperty("--owner-color", h.owner_color);
+                        polygon.style.setProperty("--owner-stroke-width", "3");
+                    } else {
+                        polygon.style.removeProperty("--owner-color");
+                        polygon.style.removeProperty("--owner-stroke-width");
+                    }
+                    
+                    // Update title
+                    const title = polygon.querySelector("title");
+                    if (title) {
+                        title.textContent = h.owner
+                            ? `(${h.q}, ${h.r}) ${group.dataset.terrain} - ${h.owner}${h.settlement ? ' (' + h.settlement + ')' : ''}`
+                            : `(${h.q}, ${h.r}) ${group.dataset.terrain}`;
+                    }
+                }
+            }
+        });
+    }
+
     function applyGameUpdate(data) {
+        if (data.is_finished) {
+            window.location.href = gameHistoryUrl;
+            return;
+        }
+        const timerDisplay = document.getElementById('timer-display');
+        const turnDisplay = document.getElementById('turn-display');
+
         // Update remaining time if it's significantly different
         if (Math.abs(data.remaining_time - remainingTime) > 5) {
             remainingTime = data.remaining_time;
-            timerDisplay.textContent = remainingTime;
+            if (timerDisplay) timerDisplay.textContent = remainingTime;
         }
 
         // Check if turn advanced
         if (data.current_turn > currentTurn) {
-            window.location.reload(); // Simplest way to refresh entire state
-            return;
+            currentTurn = data.current_turn;
+            if (turnDisplay) turnDisplay.textContent = currentTurn;
+            closeActionMenu(); // Close menu on turn transition
         }
 
-        // Update button state
-        if (data.has_ended_turn !== hasEndedTurn) {
-            hasEndedTurn = data.has_ended_turn;
-            if (hasEndedTurn) {
-                endTurnBtn.disabled = true;
-                endTurnBtn.textContent = 'Waiting...';
-            } else {
-                endTurnBtn.disabled = false;
-                endTurnBtn.textContent = 'End Turn';
-            }
-        }
+        // Update button state (handled by HTMX now)
+        hasEndedTurn = data.has_ended_turn;
 
-        // Update resources
-        if (goldDisplay) goldDisplay.textContent = data.gold;
-        if (foodDisplay) foodDisplay.textContent = data.food;
-        if (unitsDisplay) unitsDisplay.textContent = data.unit_count;
+        // Update resources (handled by HTMX now)
 
-        // Update queued actions list
-        updateQueuedActionsList(data.queued_actions);
+        // Surgical updates for units, settlements, and hexes
+        if (data.hexes) updateHexes(data.hexes);
+        if (data.settlements) updateSettlements(data.settlements);
+        if (data.units) updateUnits(data.units);
+
+        // Update queued actions list (handled by HTMX now)
     }
 
     function connectGameSocket() {
@@ -807,8 +881,19 @@ document.addEventListener('DOMContentLoaded', () => {
                 const data = JSON.parse(event.data);
                 if (data.type === 'game_update' && data.payload) {
                     applyGameUpdate(data.payload);
+                    // Trigger HTMX to update resource bar and end-turn button
+                    document.body.dispatchEvent(new CustomEvent('game-updated', { detail: data.payload }));
                 } else if (data.type === 'game_refresh') {
-                    window.location.reload();
+                    console.log('Game refresh requested');
+                    document.body.dispatchEvent(new CustomEvent('game-updated'));
+                } else if (data.type === 'timer_tick') {
+                    remainingTime = data.remaining_time;
+                    const timerDisplay = document.getElementById('timer-display');
+                    if (timerDisplay) timerDisplay.textContent = remainingTime;
+                    
+                    if (remainingTime === 0) {
+                        document.body.dispatchEvent(new CustomEvent('game-updated'));
+                    }
                 }
             } catch (err) {
                 console.error('Failed to parse game update', err);
@@ -826,12 +911,21 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     // Timer countdown
+    // Dictated by server ticks via WebSocket (timer_tick message)
+    /*
     setInterval(() => {
         if (remainingTime > 0) {
             remainingTime -= 1;
-            timerDisplay.textContent = remainingTime;
+            const timerDisplay = document.getElementById('timer-display');
+            if (timerDisplay) timerDisplay.textContent = remainingTime;
+
+            if (remainingTime === 0) {
+                // Trigger turn end check by dispatching event that HTMX listens to
+                document.body.dispatchEvent(new CustomEvent('game-updated'));
+            }
         }
     }, 1000);
+    */
 
     // Connect to WebSocket for updates
     connectGameSocket();

@@ -1,0 +1,19 @@
+<div class="meta" id="game-meta">
+    Turn <span id="turn-display">{{ game.current_turn }}</span>
+    <span>|</span>
+    Time: <span id="timer-display">{{ remaining_time }}</span>s
+    <span class="resource">💰 <span id="gold-display">{{ nation.gold }}</span></span>
+    <span class="resource">🍞 <span id="food-display">{{ nation.food }}</span></span>
+    <span class="resource">👥 <span id="units-display">{{ nation.units.count }}</span></span>
+</div>
+<form id="end-turn-form" method="post" 
+      hx-post="{% url 'hexquest:game_map' game.id %}" 
+      hx-target="#end-turn-btn" 
+      hx-select="#end-turn-btn" 
+      hx-swap="outerHTML">
+    {% csrf_token %}
+    <input type="hidden" name="action" value="end_turn">
+    <button type="submit" id="end-turn-btn" {% if nation.has_ended_turn %}disabled{% endif %}>
+        {% if nation.has_ended_turn %}Waiting...{% else %}End Turn{% endif %}
+    </button>
+</form>

@@ -210,6 +210,29 @@ def game_setup(request, game_id):
     )
 
 
+def _get_queued_actions(nation):
+    """Helper to get all queued actions for a nation."""
+    return [
+        {
+            "id": u.id,
+            "type": "unit",
+            "unit_type": u.unit_type,
+            "action": u.queued_action,
+            "q": u.q,
+            "r": u.r
+        } for u in nation.units.exclude(queued_action__isnull=True)
+    ] + [
+        {
+            "id": s.id,
+            "type": "settlement",
+            "name": s.name,
+            "action": s.queued_action,
+            "q": s.q,
+            "r": s.r
+        } for s in nation.settlements.exclude(queued_action__isnull=True)
+    ]
+
+
 @login_required
 def game_map(request, game_id):
     game = get_object_or_404(Game, id=game_id)
@@ -233,6 +256,17 @@ def game_map(request, game_id):
             else:
                 broadcast_game_update(game, user=request.user)
             
+            if request.headers.get('hx-request'):
+                game.refresh_from_db()
+                nation.refresh_from_db()
+                remaining_time = max(0, int((game.turn_end_time - timezone.now()).total_seconds())) if game.turn_end_time else 0
+                return render(request, "hexquest/partials/game_updates_all.html", {
+                    "game": game,
+                    "nation": nation,
+                    "remaining_time": remaining_time,
+                    "queued_actions": _get_queued_actions(nation),
+                })
+
             return redirect("hexquest:game_map", game_id=game.id)
 
     # Check if timer has expired
@@ -267,153 +301,165 @@ def game_map(request, game_id):
             "hexes": hexes,
             "units_by_position": units_by_position,
             "nation": nation,
-            "remaining_time": int((game.turn_end_time - timezone.now()).total_seconds()) if game.turn_end_time else 0
+            "remaining_time": int((game.turn_end_time - timezone.now()).total_seconds()) if game.turn_end_time else 0,
+            "queued_actions": _get_queued_actions(nation),
         },
     )
 
 
 def process_turn_end(game):
-    if game.is_finished:
-        return
-
-    # Check for activity in this turn
-    activity_occurred = False
-
-    # Process queued actions for units
-    units_with_queued = list(game.units.exclude(queued_action__isnull=True))
-    for unit in units_with_queued:
-        activity_occurred = True
-        action = unit.queued_action
-        unit.queued_action = None
+    with transaction.atomic():
+        # Lock the game record to prevent concurrent turn processing
+        game = Game.objects.select_for_update().get(id=game.id)
         
-        if action['type'] == 'move':
-            q, r = action['q'], action['r']
-            if hex_distance(unit.q, unit.r, q, r) <= unit.movement:
+        if game.is_finished:
+            return
+
+        # Double-check if turn should really end (either all ended or timer expired)
+        all_nations_ended = not game.nations.filter(has_ended_turn=False).exists()
+        timer_expired = game.turn_end_time and timezone.now() >= game.turn_end_time
+        
+        if not all_nations_ended and not timer_expired:
+            return
+
+        # Check for activity in this turn
+        activity_occurred = False
+
+        # Process queued actions for units
+        units_with_queued = list(game.units.exclude(queued_action__isnull=True))
+        for unit in units_with_queued:
+            activity_occurred = True
+            action = unit.queued_action
+            unit.queued_action = None
+
+            if action['type'] == 'move':
+                q, r = action['q'], action['r']
+                if hex_distance(unit.q, unit.r, q, r) <= unit.movement:
+                    target_tile = HexTile.objects.filter(game=game, q=q, r=r).first()
+                    if target_tile and target_tile.terrain != "water":
+                        unit.q = q
+                        unit.r = r
+                        unit.last_action_turn = game.current_turn
+
+            elif action['type'] == 'settle':
+                name = action['name']
+                tile = HexTile.objects.filter(game=game, q=unit.q, r=unit.r).first()
+                if tile and not tile.owner and unit.unit_type == 'settler':
+                    with transaction.atomic():
+                        settlement = Settlement.objects.create(
+                            game=game,
+                            nation=unit.nation,
+                            q=unit.q,
+                            r=unit.r,
+                            name=name,
+                            tier="village",
+                            population=1,
+                            last_action_turn=game.current_turn
+                        )
+                        tile.owner = unit.nation
+                        tile.settlement = settlement
+                        tile.save()
+                        from project.hexgrid import hex_neighbors
+                        builder_placed = False
+                        for n_q, n_r in hex_neighbors(tile.q, tile.r):
+                            adj_tile = HexTile.objects.filter(game=game, q=n_q, r=n_r).first()
+                            if adj_tile and not adj_tile.owner and adj_tile.terrain != "water":
+                                adj_tile.owner = unit.nation
+                                adj_tile.settlement = settlement
+                                adj_tile.save()
+                                # Place builder on first available adjacent tile
+                                if not builder_placed:
+                                    unit.q = n_q
+                                    unit.r = n_r
+                                    builder_placed = True
+                        unit.unit_type = 'builder'
+                        unit.queued_action = None
+                        unit.save()
+                        continue # Unit converted to builder, don't save again
+
+            elif action['type'] == 'build':
+                building_type = action['building_type']
+                tile = HexTile.objects.filter(game=game, q=unit.q, r=unit.r).first()
+                if tile and unit.unit_type == 'builder' and tile.owner == unit.nation and tile.terrain == "plains":
+                    if not hasattr(tile, 'building') or not tile.building:
+                        Building.objects.create(
+                            game=game,
+                            hex_tile=tile,
+                            building_type=building_type
+                        )
+                        unit.last_action_turn = game.current_turn
+
+            unit.save()
+
+        # Process queued actions for settlements
+        settlements_with_queued = list(game.settlements.exclude(queued_action__isnull=True))
+        for settlement in settlements_with_queued:
+            activity_occurred = True
+            action = settlement.queued_action
+            settlement.queued_action = None
+
+            if action['type'] == 'upgrade':
+                if settlement.tier == "village" and settlement.population >= 5:
+                    settlement.tier = "town"
+                    settlement.last_action_turn = game.current_turn
+                elif settlement.tier == "town" and settlement.population >= 15:
+                    settlement.tier = "city"
+                    settlement.last_action_turn = game.current_turn
+
+            elif action['type'] == 'expand':
+                q, r = action['q'], action['r']
                 target_tile = HexTile.objects.filter(game=game, q=q, r=r).first()
-                if target_tile and target_tile.terrain != "water":
-                    unit.q = q
-                    unit.r = r
-                    unit.last_action_turn = game.current_turn
-        
-        elif action['type'] == 'settle':
-            name = action['name']
-            tile = HexTile.objects.filter(game=game, q=unit.q, r=unit.r).first()
-            if tile and not tile.owner and unit.unit_type == 'settler':
-                with transaction.atomic():
-                    settlement = Settlement.objects.create(
-                        game=game,
-                        nation=unit.nation,
-                        q=unit.q,
-                        r=unit.r,
-                        name=name,
-                        tier="village",
-                        population=1,
-                        last_action_turn=game.current_turn
-                    )
-                    tile.owner = unit.nation
-                    tile.settlement = settlement
-                    tile.save()
-                    from project.hexgrid import hex_neighbors
-                    builder_placed = False
-                    for n_q, n_r in hex_neighbors(tile.q, tile.r):
-                        adj_tile = HexTile.objects.filter(game=game, q=n_q, r=n_r).first()
-                        if adj_tile and not adj_tile.owner and adj_tile.terrain != "water":
-                            adj_tile.owner = unit.nation
-                            adj_tile.settlement = settlement
-                            adj_tile.save()
-                            # Place builder on first available adjacent tile
-                            if not builder_placed:
-                                unit.q = n_q
-                                unit.r = n_r
-                                builder_placed = True
-                    unit.unit_type = 'builder'
-                    unit.queued_action = None
-                    unit.save()
-                    continue # Unit converted to builder, don't save again
-        
-        elif action['type'] == 'build':
-            building_type = action['building_type']
-            tile = HexTile.objects.filter(game=game, q=unit.q, r=unit.r).first()
-            if tile and unit.unit_type == 'builder' and tile.owner == unit.nation and tile.terrain == "plains":
-                if not hasattr(tile, 'building') or not tile.building:
-                    Building.objects.create(
-                        game=game,
-                        hex_tile=tile,
-                        building_type=building_type
-                    )
-                    unit.last_action_turn = game.current_turn
-        
-        unit.save()
+                if target_tile and not target_tile.owner and target_tile.terrain != "water":
+                    is_adjacent = False
+                    owned_tiles = HexTile.objects.filter(game=game, settlement=settlement)
+                    for tile in owned_tiles:
+                        if hex_distance(tile.q, tile.r, q, r) == 1:
+                            is_adjacent = True
+                            break
+                    if is_adjacent:
+                        owned_tiles_count = HexTile.objects.filter(game=game, owner=settlement.nation).count()
+                        cost = 10 + (owned_tiles_count * 5)
+                        if settlement.nation.gold >= cost:
+                            with transaction.atomic():
+                                settlement.nation.gold -= cost
+                                settlement.nation.save()
+                                target_tile.owner = settlement.nation
+                                target_tile.settlement = settlement
+                                target_tile.save()
+                                settlement.last_action_turn = game.current_turn
+            settlement.save()
 
-    # Process queued actions for settlements
-    settlements_with_queued = list(game.settlements.exclude(queued_action__isnull=True))
-    for settlement in settlements_with_queued:
-        activity_occurred = True
-        action = settlement.queued_action
-        settlement.queued_action = None
-        
-        if action['type'] == 'upgrade':
-            if settlement.tier == "village" and settlement.population >= 5:
-                settlement.tier = "town"
-                settlement.last_action_turn = game.current_turn
-            elif settlement.tier == "town" and settlement.population >= 15:
-                settlement.tier = "city"
-                settlement.last_action_turn = game.current_turn
-        
-        elif action['type'] == 'expand':
-            q, r = action['q'], action['r']
-            target_tile = HexTile.objects.filter(game=game, q=q, r=r).first()
-            if target_tile and not target_tile.owner and target_tile.terrain != "water":
-                is_adjacent = False
-                owned_tiles = HexTile.objects.filter(game=game, settlement=settlement)
-                for tile in owned_tiles:
-                    if hex_distance(tile.q, tile.r, q, r) == 1:
-                        is_adjacent = True
-                        break
-                if is_adjacent:
-                    owned_tiles_count = HexTile.objects.filter(game=game, owner=settlement.nation).count()
-                    cost = 10 + (owned_tiles_count * 5)
-                    if settlement.nation.gold >= cost:
-                        with transaction.atomic():
-                            settlement.nation.gold -= cost
-                            settlement.nation.save()
-                            target_tile.owner = settlement.nation
-                            target_tile.settlement = settlement
-                            target_tile.save()
-                            settlement.last_action_turn = game.current_turn
-        settlement.save()
+        if activity_occurred:
+            game.last_activity_turn = game.current_turn
+            game.save()
 
-    if activity_occurred:
-        game.last_activity_turn = game.current_turn
+        # Process resource generation from buildings
+        for building in game.buildings.all():
+            if building.building_type == "wheat_farm":
+                building.hex_tile.owner.food += 2
+                building.hex_tile.owner.save()
+
+        # Check for game end condition (3 turns without activity)
+        if game.current_turn - game.last_activity_turn >= 3:
+            game.is_finished = True
+            # Save statistics and delete temporary game objects
+            for nation in game.nations.all():
+                nation.settlement_count = nation.settlements.count()
+                nation.unit_count = nation.units.count()
+                nation.save()
+
+            game.hexes.all().delete()
+            game.settlements.all().delete()
+            game.units.all().delete()
+
+        game.current_turn += 1
+        game.turn_end_time = timezone.now() + datetime.timedelta(seconds=game.turn_timer)
         game.save()
 
-    # Process resource generation from buildings
-    for building in game.buildings.all():
-        if building.building_type == "wheat_farm":
-            building.hex_tile.owner.food += 2
-            building.hex_tile.owner.save()
+        # Reset all nations' end turn status
+        game.nations.all().update(has_ended_turn=False)
 
-    # Check for game end condition (3 turns without activity)
-    if game.current_turn - game.last_activity_turn >= 3:
-        game.is_finished = True
-        # Save statistics and delete temporary game objects
-        for nation in game.nations.all():
-            nation.settlement_count = nation.settlements.count()
-            nation.unit_count = nation.units.count()
-            nation.save()
-        
-        game.hexes.all().delete()
-        game.settlements.all().delete()
-        game.units.all().delete()
-
-    game.current_turn += 1
-    game.turn_end_time = timezone.now() + datetime.timedelta(seconds=game.turn_timer)
-    game.save()
-    
-    # Reset all nations' end turn status
-    game.nations.all().update(has_ended_turn=False)
-
-    broadcast_game_update(game)
+        broadcast_game_update(game)
 
 
 @login_required
@@ -428,6 +474,14 @@ def game_updates(request, game_id):
 
     remaining_time = int((game.turn_end_time - timezone.now()).total_seconds()) if game.turn_end_time else 0
     
+    if request.headers.get('hx-request'):
+        return render(request, "hexquest/partials/game_updates_all.html", {
+            "game": game,
+            "nation": nation,
+            "remaining_time": max(0, remaining_time),
+            "queued_actions": _get_queued_actions(nation),
+        })
+
     return JsonResponse({
         "current_turn": game.current_turn,
         "remaining_time": max(0, remaining_time),

@@ -1,0 +1,36 @@
+<ul id="queued-actions-list">
+    {% for action in queued_actions %}
+        <li class="queued-action-item">
+            <span class="action-title">
+                {% if action.type == "unit" %}
+                    {{ action.unit_type|title }}
+                {% else %}
+                    {{ action.name }}
+                {% endif %}
+                ({{ action.q }}, {{ action.r }})
+            </span>
+            <span class="action-details">
+                {% if action.action.type == "move" %}
+                    Move to ({{ action.action.q }}, {{ action.action.r }})
+                {% elif action.action.type == "settle" %}
+                    Settle: {{ action.action.name }}
+                {% elif action.action.type == "upgrade" %}
+                    Upgrade settlement
+                {% elif action.action.type == "expand" %}
+                    Expand to ({{ action.action.q }}, {{ action.action.r }})
+                {% elif action.action.type == "build" %}
+                    Build {{ action.action.building_type|title }}
+                {% endif %}
+            </span>
+            <button class="cancel-action-btn" 
+                    hx-post="{% url 'hexquest:cancel_action' game.id %}" 
+                    hx-vals='{"id": {{ action.id }}, "type": "{{ action.type }}"}'
+                    hx-headers='{"X-CSRFToken": "{{ csrf_token }}"}'
+                    hx-swap="none">
+                Cancel
+            </button>
+        </li>
+    {% empty %}
+        <li style="color: #94a3b8; font-size: 14px;">No actions queued.</li>
+    {% endfor %}
+</ul>
