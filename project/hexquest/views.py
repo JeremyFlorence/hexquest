@@ -12,6 +12,7 @@ from django.utils import timezone
 import datetime
 
 from .models import Game, HexTile, Nation, Unit, ChatMessage, Notification, Settlement, Friendship, Building
+from .consumers import broadcast_setup_update, broadcast_setup_abandoned, broadcast_game_update
 from .worldgen import generate_world
 from project.hexgrid import hex_distance
 
@@ -128,6 +129,7 @@ def game_setup(request, game_id):
             game.starting_food = int(request.POST.get("starting_food", game.starting_food))
             game.starting_settlers = int(request.POST.get("starting_settlers", game.starting_settlers))
             game.save()
+            broadcast_setup_update(game)
             if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
                 return JsonResponse({"status": "ok"})
             return redirect("hexquest:game_setup", game_id=game.id)
@@ -167,6 +169,7 @@ def game_setup(request, game_id):
             game.turn_end_time = timezone.now() + datetime.timedelta(seconds=game.turn_timer)
             game.save()
             generate_world(game, game.width, game.height, game.seed)
+            broadcast_setup_update(game)
             return redirect("hexquest:game_map", game_id=game.id)
 
         elif action == "abandon_game":
@@ -174,7 +177,9 @@ def game_setup(request, game_id):
                 return redirect("hexquest:game_setup", game_id=game.id)
             game.is_abandoned = True
             game.save()
+            abandoned_id = game.id
             game.delete()
+            broadcast_setup_abandoned(abandoned_id)
             messages.success(request, "Game abandoned and deleted.")
             return redirect("hexquest:home")
 
@@ -183,19 +188,11 @@ def game_setup(request, game_id):
             nation.name = request.POST.get("nation_name", nation.name)
             nation.color = request.POST.get("color", nation.color)
             nation.save()
+            broadcast_setup_update(game)
             if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
                 return JsonResponse({"status": "ok"})
             return redirect("hexquest:game_setup", game_id=game.id)
 
-        elif action == "send_chat":
-            text = request.POST.get("text")
-            if text:
-                ChatMessage.objects.create(
-                    game=game,
-                    user=request.user,
-                    text=text
-                )
-            return redirect("hexquest:game_setup", game_id=game.id)
 
     friend_ids = Friendship.objects.filter(user=request.user).values_list("friend_id", flat=True)
     users = User.objects.filter(id__in=friend_ids).exclude(id__in=game.nations.values_list("player_id", flat=True))
@@ -233,6 +230,8 @@ def game_map(request, game_id):
             # Check if all nations have ended their turn
             if not game.nations.filter(has_ended_turn=False).exists():
                 process_turn_end(game)
+            else:
+                broadcast_game_update(game, user=request.user)
             
             return redirect("hexquest:game_map", game_id=game.id)
 
@@ -414,6 +413,8 @@ def process_turn_end(game):
     # Reset all nations' end turn status
     game.nations.all().update(has_ended_turn=False)
 
+    broadcast_game_update(game)
+
 
 @login_required
 def game_updates(request, game_id):
@@ -456,52 +457,6 @@ def game_updates(request, game_id):
     })
 
 
-@login_required
-def game_setup_updates(request, game_id):
-    game = get_object_or_404(Game, id=game_id)
-    if not game.nations.filter(player=request.user).exists():
-        return JsonResponse({"error": "Unauthorized"}, status=403)
-
-    last_chat_id = request.GET.get("last_chat_id")
-    
-    chat_qs = game.chat_messages.all()
-    if last_chat_id:
-        chat_qs = chat_qs.filter(id__gt=last_chat_id)
-    
-    messages = [
-        {
-            "id": msg.id,
-            "user": msg.user.username,
-            "text": msg.text,
-            "created_at": msg.created_at.strftime("%H:%M"),
-        }
-        for msg in chat_qs
-    ]
-    
-    nations = [
-        {
-            "player": n.player.username,
-            "name": n.name,
-            "color": n.color,
-        }
-        for n in game.nations.all()
-    ]
-    
-    return JsonResponse({
-        "messages": messages,
-        "nations": nations,
-        "game_active": game.is_active,
-        "settings": {
-            "name": game.name,
-            "width": game.width,
-            "height": game.height,
-            "seed": game.seed,
-            "turn_timer": game.turn_timer,
-            "starting_gold": game.starting_gold,
-            "starting_food": game.starting_food,
-            "starting_settlers": game.starting_settlers,
-        }
-    })
 
 
 @login_required
@@ -519,7 +474,8 @@ def accept_invite(request, notification_id):
             gold=game.starting_gold,
             production=10,
         )
-    
+        broadcast_setup_update(game)
+
     notification.is_read = True
     notification.save()
     return redirect("hexquest:game_setup", game_id=game.id)
@@ -557,6 +513,7 @@ def unit_move(request, game_id, unit_id):
 
     unit.queued_action = {"type": "move", "q": q, "r": r}
     unit.save()
+    broadcast_game_update(unit.game, user=request.user)
     return JsonResponse({"status": "queued", "message": "Action queued for next turn"})
 
 
@@ -591,6 +548,7 @@ def unit_settle(request, game_id, unit_id):
 
     unit.queued_action = {"type": "settle", "name": name}
     unit.save()
+    broadcast_game_update(unit.game, user=request.user)
     return JsonResponse({"status": "queued", "message": "Action queued for next turn"})
 
 
@@ -647,6 +605,7 @@ def upgrade_settlement(request, game_id, settlement_id):
 
     settlement.queued_action = {"type": "upgrade"}
     settlement.save()
+    broadcast_game_update(settlement.game, user=request.user)
     return JsonResponse({"status": "queued", "message": "Action queued for next turn"})
 
 
@@ -699,6 +658,7 @@ def expand_settlement(request, game_id, settlement_id):
 
     settlement.queued_action = {"type": "expand", "q": q, "r": r}
     settlement.save()
+    broadcast_game_update(settlement.game, user=request.user)
     return JsonResponse({"status": "queued", "message": "Action queued for next turn"})
 
 
@@ -739,6 +699,7 @@ def builder_build(request, game_id, unit_id):
 
     unit.queued_action = {"type": "build", "building_type": building_type}
     unit.save()
+    broadcast_game_update(unit.game, user=request.user)
     return JsonResponse({"status": "queued", "message": "Action queued for next turn"})
 
 
@@ -769,6 +730,7 @@ def cancel_action(request, game_id):
 
     obj.queued_action = None
     obj.save()
+    broadcast_game_update(obj.game, user=request.user)
 
     return JsonResponse({"status": "ok"})
 

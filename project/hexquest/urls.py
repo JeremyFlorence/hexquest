@@ -13,7 +13,6 @@ urlpatterns = [
     path("games/new/", views.create_game, name="create_game"),
     path("games/history/", views.game_history, name="game_history"),
     path("games/<int:game_id>/setup/", views.game_setup, name="game_setup"),
-    path("games/<int:game_id>/setup/updates/", views.game_setup_updates, name="game_setup_updates"),
     path("games/<int:game_id>/map/", views.game_map, name="game_map"),
     path("games/<int:game_id>/unit/<int:unit_id>/move/", views.unit_move, name="unit_move"),
     path("games/<int:game_id>/unit/<int:unit_id>/settle/", views.unit_settle, name="unit_settle"),

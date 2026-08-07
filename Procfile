@@ -1,1 +1,1 @@
-web: cd project && gunicorn project.wsgi
+web: cd project && daphne -b 0.0.0.0 -p $PORT project.asgi:application

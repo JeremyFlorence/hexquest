@@ -54,7 +54,6 @@ document.addEventListener('DOMContentLoaded', () => {
                     if (form === settingsForm) {
                         modifiedInputs.clear();
                     }
-                    fetchUpdates();
                 } else {
                     const data = await response.json();
                     if (data.message) alert(data.message);
@@ -65,109 +64,149 @@ document.addEventListener('DOMContentLoaded', () => {
         };
     }
 
-    handleFormSubmit(chatForm, (form) => {
-        chatInput.value = '';
-    });
     handleFormSubmit(settingsForm);
     handleFormSubmit(inviteForm);
     handleFormSubmit(nationSettingsForm);
 
-    // Scroll chat to bottom
+    // --- Real-time chat via WebSocket (Django Channels) ---
+    let chatSocket = null;
 
-    async function fetchUpdates() {
-        try {
-            const response = await fetch(`updates/?last_chat_id=${lastChatId}`);
-            if (response.status === 404) {
-                window.location.href = "/?abandoned=1";
-                return;
-            }
-            const data = await response.json();
+    function appendChatMessage(msg) {
+        if (!chatMessages) return;
+        const msgDiv = document.createElement('div');
+        msgDiv.className = `chat-message ${msg.user === currentUsername ? 'own' : ''}`;
+        msgDiv.innerHTML = `
+            <div class="chat-user">${msg.user}<span class="chat-time">${msg.created_at}</span></div>
+            <div class="chat-text">${msg.text}</div>
+        `;
+        chatMessages.appendChild(msgDiv);
+        chatMessages.scrollTop = chatMessages.scrollHeight;
+    }
 
-            if (data.game_active) {
-                window.location.href = gameMapUrl;
-                return;
-            }
+    function connectChatSocket() {
+        if (typeof chatWsUrl === 'undefined') return;
+        chatSocket = new WebSocket(chatWsUrl);
 
-            // Update nations
-            if (data.nations && nationList) {
-                const currentUserId = document.querySelector('input[name="action"][value="update_nation"]')?.form ? true : false;
-                nationList.innerHTML = data.nations.map(n => `
-                    <li class="nation-item">
-                        <div class="color-swatch" data-color="${n.color}"></div>
-                        <div>
-                            <strong>${n.player}</strong>
-                            <span class="muted">(${n.name})</span>
-                        </div>
-                    </li>
-                `).join('');
-                applyColors();
-            }
-
-            // Update settings
-            if (data.settings) {
-                if (gameNameDisplay) {
-                    gameNameDisplay.textContent = `Game Setup: ${data.settings.name}`;
+        chatSocket.onmessage = (event) => {
+            try {
+                const data = JSON.parse(event.data);
+                if (data.type === 'chat_message' && data.message) {
+                    appendChatMessage(data.message);
                 }
-                
-                if (settingsForm) {
-                    const nameInput = settingsForm.querySelector('#name');
-                    if (nameInput && !modifiedInputs.has('name')) nameInput.value = data.settings.name;
-                    
-                    const widthInput = settingsForm.querySelector('#width');
-                    if (widthInput && !modifiedInputs.has('width')) widthInput.value = data.settings.width;
-                    
-                    const heightInput = settingsForm.querySelector('#height');
-                    if (heightInput && !modifiedInputs.has('height')) heightInput.value = data.settings.height;
-                    
-                    const seedInput = settingsForm.querySelector('#seed');
-                    if (seedInput && !modifiedInputs.has('seed')) seedInput.value = data.settings.seed;
-                    
-                    const timerInput = settingsForm.querySelector('#turn_timer');
-                    if (timerInput && !modifiedInputs.has('turn_timer')) timerInput.value = data.settings.turn_timer;
-                    
-                    const goldInput = settingsForm.querySelector('#starting_gold');
-                    if (goldInput && !modifiedInputs.has('starting_gold')) goldInput.value = data.settings.starting_gold;
-                    
-                    const foodInput = settingsForm.querySelector('#starting_food');
-                    if (foodInput && !modifiedInputs.has('starting_food')) foodInput.value = data.settings.starting_food;
-                    
-                    const settlersInput = settingsForm.querySelector('#starting_settlers');
-                    if (settlersInput && !modifiedInputs.has('starting_settlers')) settlersInput.value = data.settings.starting_settlers;
-                }
+            } catch (err) {
+                console.error('Failed to parse chat message', err);
+            }
+        };
 
-                if (settingsReadonly) {
-                    settingsReadonly.innerHTML = `
-                        <p><strong>Game Name:</strong> ${data.settings.name}</p>
-                        <p><strong>Map Size:</strong> ${data.settings.width} x ${data.settings.height}</p>
-                        <p><strong>Map Seed:</strong> ${data.settings.seed}</p>
-                        <p><strong>Turn Timer:</strong> ${data.settings.turn_timer} seconds</p>
-                        <p><strong>Starting Gold:</strong> ${data.settings.starting_gold}</p>
-                        <p><strong>Starting Food:</strong> ${data.settings.starting_food}</p>
-                        <p><strong>Starting Settlers:</strong> ${data.settings.starting_settlers}</p>
-                        <p class="muted">Only the game creator can change settings.</p>
-                    `;
-                }
+        chatSocket.onclose = () => {
+            // Attempt to reconnect after a short delay so chat stays live.
+            setTimeout(connectChatSocket, 2000);
+        };
+
+        chatSocket.onerror = (err) => {
+            console.error('Chat socket error', err);
+            chatSocket.close();
+        };
+    }
+    connectChatSocket();
+
+    if (chatForm) {
+        chatForm.addEventListener('submit', (e) => {
+            e.preventDefault();
+            const text = chatInput.value.trim();
+            if (!text) return;
+            if (chatSocket && chatSocket.readyState === WebSocket.OPEN) {
+                chatSocket.send(JSON.stringify({ text }));
+                chatInput.value = '';
+            }
+        });
+    }
+
+    if (chatMessages) {
+        chatMessages.scrollTop = chatMessages.scrollHeight;
+    }
+
+    function applySetupUpdate(data) {
+        if (!data) return;
+
+        if (data.game_active) {
+            window.location.href = gameMapUrl;
+            return;
+        }
+
+        // Update nations
+        if (data.nations && nationList) {
+            nationList.innerHTML = data.nations.map(n => `
+                <li class="nation-item">
+                    <div class="color-swatch" data-color="${n.color}"></div>
+                    <div>
+                        <strong>${n.player}</strong>
+                        <span class="muted">(${n.name})</span>
+                    </div>
+                </li>
+            `).join('');
+            applyColors();
+        }
+
+        // Update settings
+        if (data.settings) {
+            if (gameNameDisplay) {
+                gameNameDisplay.textContent = `Game Setup: ${data.settings.name}`;
             }
 
-            // Update chat
-            if (data.messages && data.messages.length > 0 && chatMessages) {
-                data.messages.forEach(msg => {
-                    const msgDiv = document.createElement('div');
-                    msgDiv.className = `chat-message ${msg.user === currentUsername ? 'own' : ''}`;
-                    msgDiv.innerHTML = `
-                        <div class="chat-user">${msg.user}<span class="chat-time">${msg.created_at}</span></div>
-                        <div class="chat-text">${msg.text}</div>
-                    `;
-                    chatMessages.appendChild(msgDiv);
-                    lastChatId = Math.max(lastChatId, msg.id);
+            if (settingsForm) {
+                const fields = ['name', 'width', 'height', 'seed', 'turn_timer',
+                                'starting_gold', 'starting_food', 'starting_settlers'];
+                fields.forEach(field => {
+                    const input = settingsForm.querySelector(`#${field}`);
+                    if (input && !modifiedInputs.has(field)) input.value = data.settings[field];
                 });
-                chatMessages.scrollTop = chatMessages.scrollHeight;
             }
-        } catch (err) {
-            console.error("Failed to fetch updates", err);
+
+            if (settingsReadonly) {
+                settingsReadonly.innerHTML = `
+                    <p><strong>Game Name:</strong> ${data.settings.name}</p>
+                    <p><strong>Map Size:</strong> ${data.settings.width} x ${data.settings.height}</p>
+                    <p><strong>Map Seed:</strong> ${data.settings.seed}</p>
+                    <p><strong>Turn Timer:</strong> ${data.settings.turn_timer} seconds</p>
+                    <p><strong>Starting Gold:</strong> ${data.settings.starting_gold}</p>
+                    <p><strong>Starting Food:</strong> ${data.settings.starting_food}</p>
+                    <p><strong>Starting Settlers:</strong> ${data.settings.starting_settlers}</p>
+                    <p class="muted">Only the game creator can change settings.</p>
+                `;
+            }
         }
     }
 
-    // Poll for updates every 3 seconds
-    setInterval(fetchUpdates, 3000);
+    // --- Real-time setup lobby via WebSocket (Django Channels) ---
+    let setupSocket = null;
+
+    function connectSetupSocket() {
+        if (typeof setupWsUrl === 'undefined') return;
+        setupSocket = new WebSocket(setupWsUrl);
+
+        setupSocket.onmessage = (event) => {
+            try {
+                const data = JSON.parse(event.data);
+                if (data.type === 'setup_update') {
+                    applySetupUpdate(data.payload);
+                } else if (data.type === 'setup_abandoned') {
+                    window.location.href = '/?abandoned=1';
+                }
+            } catch (err) {
+                console.error('Failed to parse setup update', err);
+            }
+        };
+
+        setupSocket.onclose = () => {
+            // Attempt to reconnect after a short delay so the lobby stays live.
+            setTimeout(connectSetupSocket, 2000);
+        };
+
+        setupSocket.onerror = (err) => {
+            console.error('Setup socket error', err);
+            setupSocket.close();
+        };
+    }
+    connectSetupSocket();
 });

@@ -762,63 +762,79 @@ document.addEventListener('DOMContentLoaded', () => {
     const foodDisplay = document.getElementById('food-display');
     const unitsDisplay = document.getElementById('units-display');
 
+    let gameSocket = null;
+
+    function applyGameUpdate(data) {
+        // Update remaining time if it's significantly different
+        if (Math.abs(data.remaining_time - remainingTime) > 5) {
+            remainingTime = data.remaining_time;
+            timerDisplay.textContent = remainingTime;
+        }
+
+        // Check if turn advanced
+        if (data.current_turn > currentTurn) {
+            window.location.reload(); // Simplest way to refresh entire state
+            return;
+        }
+
+        // Update button state
+        if (data.has_ended_turn !== hasEndedTurn) {
+            hasEndedTurn = data.has_ended_turn;
+            if (hasEndedTurn) {
+                endTurnBtn.disabled = true;
+                endTurnBtn.textContent = 'Waiting...';
+            } else {
+                endTurnBtn.disabled = false;
+                endTurnBtn.textContent = 'End Turn';
+            }
+        }
+
+        // Update resources
+        if (goldDisplay) goldDisplay.textContent = data.gold;
+        if (foodDisplay) foodDisplay.textContent = data.food;
+        if (unitsDisplay) unitsDisplay.textContent = data.unit_count;
+
+        // Update queued actions list
+        updateQueuedActionsList(data.queued_actions);
+    }
+
+    function connectGameSocket() {
+        if (typeof gameWsUrl === 'undefined') return;
+        gameSocket = new WebSocket(gameWsUrl);
+
+        gameSocket.onmessage = (event) => {
+            try {
+                const data = JSON.parse(event.data);
+                if (data.type === 'game_update' && data.payload) {
+                    applyGameUpdate(data.payload);
+                } else if (data.type === 'game_refresh') {
+                    window.location.reload();
+                }
+            } catch (err) {
+                console.error('Failed to parse game update', err);
+            }
+        };
+
+        gameSocket.onclose = () => {
+            setTimeout(connectGameSocket, 2000);
+        };
+
+        gameSocket.onerror = (err) => {
+            console.error('Game socket error', err);
+            gameSocket.close();
+        };
+    }
+
     // Timer countdown
     setInterval(() => {
         if (remainingTime > 0) {
             remainingTime -= 1;
             timerDisplay.textContent = remainingTime;
-        } else {
-            // Timer reached zero, turn should advance automatically
-            // We poll frequently so it will catch up
         }
     }, 1000);
 
-    async function fetchUpdates() {
-        try {
-            const response = await fetch(gameUpdatesUrl);
-            const data = await response.json();
-
-            // Update remaining time if it's significantly different
-            if (Math.abs(data.remaining_time - remainingTime) > 5) {
-                remainingTime = data.remaining_time;
-                timerDisplay.textContent = remainingTime;
-            }
-
-            // Check if turn advanced
-            if (data.current_turn > currentTurn) {
-                window.location.reload(); // Simplest way to refresh entire state
-                return;
-            }
-
-            // Update button state
-            if (data.has_ended_turn !== hasEndedTurn) {
-                hasEndedTurn = data.has_ended_turn;
-                if (hasEndedTurn) {
-                    endTurnBtn.disabled = true;
-                    endTurnBtn.textContent = 'Waiting...';
-                } else {
-                    endTurnBtn.disabled = false;
-                    endTurnBtn.textContent = 'End Turn';
-                }
-            }
-
-            // Update resources
-            if (goldDisplay) goldDisplay.textContent = data.gold;
-            if (foodDisplay) foodDisplay.textContent = data.food;
-            if (unitsDisplay) unitsDisplay.textContent = data.unit_count;
-
-            // Update queued actions list
-            updateQueuedActionsList(data.queued_actions);
-        } catch (err) {
-            console.error("Failed to fetch updates", err);
-        }
-    }
-
-    // Poll for updates every 2 seconds
-    setInterval(fetchUpdates, 2000);
-
-    // Initial fetch to populate sidebar
-    fetchUpdates();
+    // Connect to WebSocket for updates
+    connectGameSocket();
 
     // Escape key to close action menu
     document.addEventListener('keydown', (e) => {

@@ -1,9 +1,14 @@
-from django.test import TestCase
+from asgiref.sync import async_to_sync, sync_to_async
+from channels.testing import WebsocketCommunicator
+from django.test import TransactionTestCase
 from django.contrib.auth.models import User
 from django.urls import reverse
+
+from .consumers import SetupConsumer
 from .models import Game, Nation, Friendship, Notification
 
-class GameSetupAJAXTests(TestCase):
+
+class GameSetupAJAXTests(TransactionTestCase):
     def setUp(self):
         self.creator = User.objects.create_user(username='creator', password='password')
         self.player2 = User.objects.create_user(username='player2', password='password')
@@ -13,9 +18,9 @@ class GameSetupAJAXTests(TestCase):
         self.client.post(reverse('hexquest:create_game'))
         self.game = Game.objects.latest('created_at')
 
-    def test_update_settings_ajax(self):
-        self.client.force_login(self.creator)
-        response = self.client.post(
+    async def test_update_settings_ajax(self):
+        await sync_to_async(self.client.force_login)(self.creator)
+        response = await sync_to_async(self.client.post)(
             reverse('hexquest:game_setup', kwargs={'game_id': self.game.id}),
             {'action': 'update_settings', 'name': 'New Game Name', 'width': 20, 'height': 20, 'seed': 'newseed', 'turn_timer': 60, 'starting_gold': 100, 'starting_food': 100, 'starting_settlers': 2},
             HTTP_X_REQUESTED_WITH='XMLHttpRequest'
@@ -23,13 +28,13 @@ class GameSetupAJAXTests(TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.json(), {'status': 'ok'})
         
-        self.game.refresh_from_db()
+        await sync_to_async(self.game.refresh_from_db)()
         self.assertEqual(self.game.name, 'New Game Name')
         self.assertEqual(self.game.width, 20)
 
-    def test_invite_player_ajax(self):
-        self.client.force_login(self.creator)
-        response = self.client.post(
+    async def test_invite_player_ajax(self):
+        await sync_to_async(self.client.force_login)(self.creator)
+        response = await sync_to_async(self.client.post)(
             reverse('hexquest:game_setup', kwargs={'game_id': self.game.id}),
             {'action': 'invite_player', 'username': 'player2'},
             HTTP_X_REQUESTED_WITH='XMLHttpRequest'
@@ -37,11 +42,11 @@ class GameSetupAJAXTests(TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.json(), {'status': 'ok'})
         
-        self.assertTrue(Notification.objects.filter(user=self.player2, game=self.game, notification_type='game_invite').exists())
+        self.assertTrue(await sync_to_async(Notification.objects.filter(user=self.player2, game=self.game, notification_type='game_invite').exists)())
 
-    def test_update_nation_ajax(self):
-        self.client.force_login(self.creator)
-        response = self.client.post(
+    async def test_update_nation_ajax(self):
+        await sync_to_async(self.client.force_login)(self.creator)
+        response = await sync_to_async(self.client.post)(
             reverse('hexquest:game_setup', kwargs={'game_id': self.game.id}),
             {'action': 'update_nation', 'nation_name': 'My Super Nation', 'color': '#ff0000'},
             HTTP_X_REQUESTED_WITH='XMLHttpRequest'
@@ -49,15 +54,24 @@ class GameSetupAJAXTests(TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.json(), {'status': 'ok'})
         
-        nation = Nation.objects.get(game=self.game, player=self.creator)
+        nation = await sync_to_async(Nation.objects.get)(game=self.game, player=self.creator)
         self.assertEqual(nation.name, 'My Super Nation')
         self.assertEqual(nation.color, '#ff0000')
 
-    def test_game_setup_updates_includes_settings(self):
-        self.client.force_login(self.creator)
-        response = self.client.get(reverse('hexquest:game_setup_updates', kwargs={'game_id': self.game.id}))
-        self.assertEqual(response.status_code, 200)
-        data = response.json()
-        self.assertIn('settings', data)
-        self.assertEqual(data['settings']['name'], self.game.name)
-        self.assertEqual(data['settings']['width'], self.game.width)
+    async def test_setup_socket_includes_settings(self):
+        communicator = WebsocketCommunicator(
+            SetupConsumer.as_asgi(),
+            f"/ws/setup/{self.game.id}/",
+        )
+        communicator.scope["user"] = self.creator
+        communicator.scope["url_route"] = {"kwargs": {"game_id": str(self.game.id)}}
+        connected, _ = await communicator.connect()
+        try:
+            self.assertTrue(connected)
+            initial = await communicator.receive_json_from()
+            self.assertEqual(initial["type"], "setup_update")
+            self.assertIn("settings", initial["payload"])
+            self.assertEqual(initial["payload"]["settings"]["name"], self.game.name)
+            self.assertEqual(initial["payload"]["settings"]["width"], self.game.width)
+        finally:
+            await communicator.disconnect()

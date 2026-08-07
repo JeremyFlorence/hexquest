@@ -35,6 +35,8 @@
     const cancelActionUrl = "{% url 'hexquest:cancel_action' game.id %}";
     const currentUserId = {{ request.user.id }};
     const csrfToken = "{{ csrf_token }}";
+    const wsScheme = window.location.protocol === 'https:' ? 'wss://' : 'ws://';
+    const gameWsUrl = wsScheme + window.location.host + `/ws/game/${gameId}/`;
     let currentTurn = {{ game.current_turn }};
     let remainingTime = {{ remaining_time }};
     let hasEndedTurn = {% if nation.has_ended_turn %}true{% else %}false{% endif %};

@@ -148,9 +148,7 @@
                     </div>
                 {% endfor %}
             </div>
-            <form class="chat-input-area" id="chat-form" method="post">
-                {% csrf_token %}
-                <input type="hidden" name="action" value="send_chat">
+            <form class="chat-input-area" id="chat-form">
                 <input type="text" name="text" id="chat-input" placeholder="Type a message..." autocomplete="off" required>
                 <button type="submit">Send</button>
             </form>
@@ -185,7 +183,9 @@
     const gameId = {{ game.id }};
     const gameMapUrl = "{% url 'hexquest:game_map' game.id %}";
     const currentUsername = "{{ request.user.username }}";
-    let lastChatId = {% if chat_messages %}{{ chat_messages.last.id }}{% else %}0{% endif %};
+    const wsScheme = window.location.protocol === 'https:' ? 'wss://' : 'ws://';
+    const chatWsUrl = wsScheme + window.location.host + `/ws/chat/${gameId}/`;
+    const setupWsUrl = wsScheme + window.location.host + `/ws/setup/${gameId}/`;
 </script>
 <script src="{% static 'hexquest/js/game_setup.js' %}"></script>
 </body>
