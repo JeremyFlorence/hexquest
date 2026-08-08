@@ -11,11 +11,23 @@
 <body>
 <header hx-get="{% url 'hexquest:game_updates' game.id %}" 
         hx-trigger="game-updated from:body" 
-        hx-target="#game-meta-wrapper"
-        hx-select="#game-meta-all">
-    <h1>{{ game.name }}</h1>
+        hx-target="#game-meta"
+        hx-select="#game-meta"
+        hx-swap="outerHTML">
+    <div class="header-left">
+        <a href="{% url 'hexquest:home' %}" class="back-btn" title="Back to Home">
+            <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m15 18-6-6 6-6"/></svg>
+        </a>
+        <h1>{{ game.name }}</h1>
+    </div>
     <div id="game-meta-wrapper">
         {% include "hexquest/partials/game_meta.html" %}
+    </div>
+    <div class="header-right">
+        <div class="chat-btn-container">
+            <button id="toggle-chat-btn" class="secondary">Chat</button>
+            <span id="chat-notification-dot" class="notification-dot" style="display: none;"></span>
+        </div>
     </div>
 </header>
 
@@ -28,6 +40,8 @@
     const csrfToken = "{{ csrf_token }}";
     const wsScheme = window.location.protocol === 'https:' ? 'wss://' : 'ws://';
     const gameWsUrl = wsScheme + window.location.host + `/ws/game/${gameId}/`;
+    const chatWsUrl = wsScheme + window.location.host + `/ws/chat/${gameId}/`;
+    const currentUsername = "{{ request.user.username }}";
     let currentTurn = {{ game.current_turn }};
     let remainingTime = {{ remaining_time }};
     let hasEndedTurn = {% if nation.has_ended_turn %}true{% else %}false{% endif %};
@@ -114,6 +128,27 @@
     <h3>Queued Actions</h3>
     {% include "hexquest/partials/queued_actions.html" %}
 </aside>
+</div>
+
+<div id="chat-overlay" class="chat-overlay" style="display: none;">
+    <div class="chat-container">
+        <div class="chat-header">
+            <h3>Game Chat</h3>
+            <button id="close-chat-btn">&times;</button>
+        </div>
+        <div class="chat-messages" id="chat-messages">
+            {% for msg in chat_messages %}
+                <div class="chat-message {% if msg.user == request.user %}own{% endif %}">
+                    <div class="chat-user">{{ msg.user.username }}<span class="chat-time">{{ msg.created_at|date:"H:i" }}</span></div>
+                    <div class="chat-text">{{ msg.text }}</div>
+                </div>
+            {% endfor %}
+        </div>
+        <form class="chat-input-area" id="chat-form">
+            <input type="text" name="text" id="chat-input" placeholder="Type a message..." autocomplete="off" required>
+            <button type="submit">Send</button>
+        </form>
+    </div>
 </div>
 
 <script src="{% static 'hexquest/js/game_map.js' %}"></script>

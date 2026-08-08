@@ -942,6 +942,96 @@ document.addEventListener('DOMContentLoaded', () => {
     const mapWrap = document.querySelector('.map-wrap');
     mapSvg.style.transformOrigin = '0 0';
 
+    // --- Real-time chat via WebSocket (Django Channels) ---
+    const chatOverlay = document.getElementById('chat-overlay');
+    const chatMessages = document.getElementById('chat-messages');
+    const chatForm = document.getElementById('chat-form');
+    const chatInput = document.getElementById('chat-input');
+    const toggleChatBtn = document.getElementById('toggle-chat-btn');
+    const closeChatBtn = document.getElementById('close-chat-btn');
+    let chatSocket = null;
+
+    function appendChatMessage(msg) {
+        if (!chatMessages) return;
+        const msgDiv = document.createElement('div');
+        msgDiv.className = `chat-message ${msg.user === currentUsername ? 'own' : ''}`;
+        msgDiv.innerHTML = `
+            <div class="chat-user">${msg.user}<span class="chat-time">${msg.created_at}</span></div>
+            <div class="chat-text">${msg.text}</div>
+        `;
+        chatMessages.appendChild(msgDiv);
+        chatMessages.scrollTop = chatMessages.scrollHeight;
+
+        // Show notification dot if chat is closed and it's not our own message
+        if (chatOverlay.style.display === 'none' && msg.user !== currentUsername) {
+            const dot = document.getElementById('chat-notification-dot');
+            if (dot) dot.style.display = 'block';
+        }
+    }
+
+    function connectChatSocket() {
+        if (typeof chatWsUrl === 'undefined') return;
+        chatSocket = new WebSocket(chatWsUrl);
+
+        chatSocket.onmessage = (event) => {
+            try {
+                const data = JSON.parse(event.data);
+                if (data.type === 'chat_message' && data.message) {
+                    appendChatMessage(data.message);
+                }
+            } catch (err) {
+                console.error('Failed to parse chat message', err);
+            }
+        };
+
+        chatSocket.onclose = () => {
+            setTimeout(connectChatSocket, 2000);
+        };
+
+        chatSocket.onerror = (err) => {
+            console.error('Chat socket error', err);
+            chatSocket.close();
+        };
+    }
+    connectChatSocket();
+
+    if (chatForm) {
+        chatForm.addEventListener('submit', (e) => {
+            e.preventDefault();
+            const text = chatInput.value.trim();
+            if (!text) return;
+            if (chatSocket && chatSocket.readyState === WebSocket.OPEN) {
+                chatSocket.send(JSON.stringify({ text }));
+                chatInput.value = '';
+            }
+        });
+    }
+
+    if (toggleChatBtn) {
+        toggleChatBtn.addEventListener('click', () => {
+            const isHidden = chatOverlay.style.display === 'none';
+            chatOverlay.style.display = isHidden ? 'block' : 'none';
+            if (isHidden) {
+                chatMessages.scrollTop = chatMessages.scrollHeight;
+                chatInput.focus();
+                
+                // Hide notification dot when opening chat
+                const dot = document.getElementById('chat-notification-dot');
+                if (dot) dot.style.display = 'none';
+            }
+        });
+    }
+
+    if (closeChatBtn) {
+        closeChatBtn.addEventListener('click', () => {
+            chatOverlay.style.display = 'none';
+        });
+    }
+
+    if (chatMessages) {
+        chatMessages.scrollTop = chatMessages.scrollHeight;
+    }
+
     // Draggable action menu
     const actionMenu = document.getElementById('action-menu');
     const dragHandle = document.getElementById('action-menu-handle');

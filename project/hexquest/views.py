@@ -293,6 +293,8 @@ def game_map(request, game_id):
         for unit in units
     }
 
+    chat_messages = game.chat_messages.all().select_related("user")
+
     return render(
         request,
         "hexquest/game_map.html",
@@ -303,6 +305,7 @@ def game_map(request, game_id):
             "nation": nation,
             "remaining_time": int((game.turn_end_time - timezone.now()).total_seconds()) if game.turn_end_time else 0,
             "queued_actions": _get_queued_actions(nation),
+            "chat_messages": chat_messages,
         },
     )
 
