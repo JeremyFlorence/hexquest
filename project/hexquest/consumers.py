@@ -41,15 +41,30 @@ def _user_game_group(game_id, user_id):
 
 
 def _serialize_setup(game):
+    from .models import Notification
     return {
         "nations": [
             {
                 "player": n.player.username,
+                "player_id": n.player.id,
                 "name": n.name,
                 "color": n.color,
             }
             for n in game.nations.select_related("player").all()
         ],
+        "invitations": [
+            {
+                "id": i.id,
+                "player": i.user.username,
+            }
+            for i in Notification.objects.filter(game=game, notification_type="game_invite", is_read=False).select_related("user")
+        ],
+        "unavailable_players": (
+            list(game.nations.values_list("player__username", flat=True)) +
+            list(Notification.objects.filter(
+                game=game, notification_type="game_invite", is_read=False
+            ).values_list("user__username", flat=True))
+        ),
         "game_active": game.is_active,
         "settings": {
             "name": game.name,
@@ -61,6 +76,7 @@ def _serialize_setup(game):
             "starting_food": game.starting_food,
             "starting_settlers": game.starting_settlers,
         },
+        "creator": game.creator.username if game.creator else None,
     }
 
 
@@ -75,6 +91,21 @@ def broadcast_setup_update(game):
         await channel_layer.group_send(
             _setup_group(game.id),
             {"type": "setup.update", "payload": payload},
+        )
+
+    _dispatch_async(_do_send)
+
+
+def broadcast_player_kicked(game_id, player_id):
+    """Notify a specific player that they have been kicked from the lobby."""
+    channel_layer = get_channel_layer()
+    if channel_layer is None:
+        return
+
+    async def _do_send():
+        await channel_layer.group_send(
+            _setup_group(game_id),
+            {"type": "setup.kicked", "player_id": player_id},
         )
 
     _dispatch_async(_do_send)
@@ -312,6 +343,9 @@ class SetupConsumer(AsyncJsonWebsocketConsumer):
 
     async def setup_abandoned(self, event):
         await self.send_json({"type": "setup_abandoned"})
+
+    async def setup_kicked(self, event):
+        await self.send_json({"type": "setup_kicked", "player_id": event["player_id"]})
 
     @database_sync_to_async
     def _get_initial_state(self, user_id, game_id):

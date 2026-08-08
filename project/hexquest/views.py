@@ -12,7 +12,7 @@ from django.utils import timezone
 import datetime
 
 from .models import Game, HexTile, Nation, Unit, ChatMessage, Notification, Settlement, Friendship, Building
-from .consumers import broadcast_setup_update, broadcast_setup_abandoned, broadcast_game_update
+from .consumers import broadcast_setup_update, broadcast_setup_abandoned, broadcast_game_update, broadcast_player_kicked
 from .worldgen import generate_world
 from project.hexgrid import hex_distance
 
@@ -20,6 +20,9 @@ from project.hexgrid import hex_distance
 def home(request):
     if request.GET.get("abandoned"):
         messages.warning(request, "The game creator has abandoned the game.")
+    
+    if request.GET.get("kicked"):
+        messages.warning(request, "You have been kicked from the game lobby.")
 
     games = []
 
@@ -143,14 +146,15 @@ def game_setup(request, game_id):
                 # Check if user is a friend
                 if Friendship.objects.filter(user=request.user, friend=user_to_invite).exists():
                     if not game.nations.filter(player=user_to_invite).exists():
-                        # Check if already invited
-                        if not Notification.objects.filter(user=user_to_invite, game=game, notification_type="game_invite").exists():
+                        # Check if already invited (only block if there is an UNREAD invite)
+                        if not Notification.objects.filter(user=user_to_invite, game=game, notification_type="game_invite", is_read=False).exists():
                             Notification.objects.create(
                                 user=user_to_invite,
                                 game=game,
                                 notification_type="game_invite",
                                 message=f"{request.user.username} invited you to join the game '{game.name}'"
                             )
+                            broadcast_setup_update(game)
                 else:
                     messages.error(request, "You can only invite users who are on your friends list.")
             except User.DoesNotExist:
@@ -194,8 +198,20 @@ def game_setup(request, game_id):
             return redirect("hexquest:game_setup", game_id=game.id)
 
 
+    # Identify already invited or joined players to disable them in the invite dropdown
+    joined_player_ids = game.nations.values_list("player_id", flat=True)
+    invited_player_ids = Notification.objects.filter(
+        game=game, notification_type="game_invite", is_read=False
+    ).values_list("user_id", flat=True)
+    unavailable_user_ids = set(joined_player_ids) | set(invited_player_ids)
+
     friend_ids = Friendship.objects.filter(user=request.user).values_list("friend_id", flat=True)
-    users = User.objects.filter(id__in=friend_ids).exclude(id__in=game.nations.values_list("player_id", flat=True))
+    users = User.objects.filter(id__in=friend_ids)
+    
+    for user in users:
+        user.is_unavailable = user.id in unavailable_user_ids
+
+    invitations = Notification.objects.filter(game=game, notification_type="game_invite", is_read=False)
     chat_messages = game.chat_messages.all().select_related("user")
     
     return render(
@@ -204,6 +220,7 @@ def game_setup(request, game_id):
         {
             "game": game,
             "nations": game.nations.all(),
+            "invitations": invitations,
             "available_users": users,
             "chat_messages": chat_messages,
         },
@@ -517,8 +534,52 @@ def game_updates(request, game_id):
 
 
 @login_required
+def cancel_invite(request, notification_id):
+    notification = get_object_or_404(Notification, id=notification_id, notification_type="game_invite")
+    game = notification.game
+    if game.creator != request.user:
+        return HttpResponseForbidden("Only the game creator can cancel invitations.")
+    
+    notification.delete()
+    broadcast_setup_update(game)
+    
+    if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
+        return JsonResponse({"status": "ok"})
+    return redirect("hexquest:game_setup", game_id=game.id)
+
+
+@login_required
+def kick_player(request, game_id, player_id):
+    game = get_object_or_404(Game, id=game_id)
+    if game.creator != request.user:
+        return HttpResponseForbidden("Only the game creator can kick players.")
+    
+    if int(player_id) == game.creator.id:
+        return HttpResponseForbidden("You cannot kick yourself.")
+    
+    player_to_kick = get_object_or_404(User, id=player_id)
+    nation = get_object_or_404(Nation, game=game, player=player_to_kick)
+    nation.delete()
+
+    # Also delete any existing invitations for this player in this game so they can be re-invited
+    Notification.objects.filter(user=player_to_kick, game=game, notification_type="game_invite").delete()
+
+    broadcast_player_kicked(game.id, int(player_id))
+    broadcast_setup_update(game)
+    
+    if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
+        return JsonResponse({"status": "ok"})
+    return redirect("hexquest:game_setup", game_id=game.id)
+
+
+@login_required
 def accept_invite(request, notification_id):
-    notification = get_object_or_404(Notification, id=notification_id, user=request.user)
+    try:
+        notification = Notification.objects.get(id=notification_id, user=request.user)
+    except Notification.DoesNotExist:
+        messages.error(request, "This invitation has been cancelled or no longer exists.")
+        return redirect("hexquest:home")
+    
     game = notification.game
     
     if game and not game.nations.filter(player=request.user).exists():
@@ -531,10 +592,10 @@ def accept_invite(request, notification_id):
             gold=game.starting_gold,
             production=10,
         )
-        broadcast_setup_update(game)
 
     notification.is_read = True
     notification.save()
+    broadcast_setup_update(game)
     return redirect("hexquest:game_setup", game_id=game.id)
 
 
@@ -628,10 +689,19 @@ def rename_settlement(request, game_id, settlement_id):
     return JsonResponse({"status": "ok", "name": settlement.name})
 
 
+@login_required
 def ignore_invite(request, notification_id):
-    notification = get_object_or_404(Notification, id=notification_id, user=request.user)
+    try:
+        notification = Notification.objects.get(id=notification_id, user=request.user)
+    except Notification.DoesNotExist:
+        messages.error(request, "This invitation has been cancelled or no longer exists.")
+        return redirect("hexquest:home")
+    
+    game = notification.game
     notification.is_read = True
     notification.save()
+    if game:
+        broadcast_setup_update(game)
     return redirect("hexquest:home")
 
 

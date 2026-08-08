@@ -59,7 +59,10 @@
                     </div>
                 </div>
 
-                <button type="submit" class="secondary">Save Settings</button>
+                <div style="display: flex; gap: 16px; align-items: center;">
+                    <button type="submit" class="secondary">Save Settings</button>
+                    <span class="status-message" style="display: none; margin-left: 8px; font-weight: bold;"></span>
+                </div>
             </form>
         {% else %}
             <div class="settings-readonly">
@@ -79,11 +82,30 @@
         <h2>Players & Nations</h2>
         <ul class="nation-list" id="nation-list">
             {% for nation in nations %}
-                <li class="nation-item">
+                <li class="nation-item" data-player-id="{{ nation.player.id }}">
                     <div class="color-swatch" data-color="{{ nation.color }}"></div>
-                    <div>
-                        <strong>{{ nation.player.username }}</strong>
-                        <span class="muted">({{ nation.name }})</span>
+                    <div style="display: flex; justify-content: space-between; align-items: center; flex: 1;">
+                        <div>
+                            <strong>{{ nation.player.username }}</strong>
+                            <span class="muted">({{ nation.name }})</span>
+                        </div>
+                        {% if game.creator == request.user and nation.player != game.creator %}
+                            <button type="button" class="danger small-button kick-player-btn" data-player-id="{{ nation.player.id }}">Kick</button>
+                        {% endif %}
+                    </div>
+                </li>
+            {% endfor %}
+            {% for invite in invitations %}
+                <li class="nation-item invited" data-invite-id="{{ invite.id }}">
+                    <div class="color-swatch" style="background-color: #475569; border: 1px dashed #94a3b8;"></div>
+                    <div style="display: flex; justify-content: space-between; align-items: center; flex: 1;">
+                        <div>
+                            <strong>{{ invite.user.username }}</strong>
+                            <span class="muted">(invited)</span>
+                        </div>
+                        {% if game.creator == request.user %}
+                            <button type="button" class="danger small-button cancel-invite-btn" data-invite-id="{{ invite.id }}">Cancel Invite</button>
+                        {% endif %}
                     </div>
                 </li>
             {% endfor %}
@@ -92,10 +114,13 @@
         {% for nation in nations %}
             {% if nation.player == request.user %}
                 <hr style="border: 0; border-top: 1px solid #334155; margin: 24px 0;">
-                <h3>Your Nation Settings</h3>
                 <form method="post">
                     {% csrf_token %}
                     <input type="hidden" name="action" value="update_nation">
+                    <div style="display: flex; align-items: center; gap: 16px; margin-bottom: 8px;">
+                        <h3 style="margin: 0;">Your Nation Settings</h3>
+                        <span class="status-message" style="display: none; font-weight: bold;"></span>
+                    </div>
                     <div style="display: flex; gap: 16px; align-items: flex-end;">
                         <div class="form-group" style="flex: 2;">
                             <label for="nation_name">Nation Name</label>
@@ -103,7 +128,7 @@
                         </div>
                         <div class="form-group" style="flex: 1;">
                             <label for="color">Nation Color</label>
-                            <input type="color" id="color" name="color" value="{{ nation.color }}" style="height: 44px; padding: 2px;">
+                            <input type="color" id="color" name="color" value="{{ nation.color }}" style="height: 42px; padding: 2px;">
                         </div>
                         <div class="form-group">
                             <button type="submit" class="secondary">Update</button>
@@ -115,24 +140,35 @@
 
         <hr style="border: 0; border-top: 1px solid #334155; margin: 24px 0;">
 
-        <h3>Invite Player</h3>
         {% if game.creator == request.user %}
             {% if available_users %}
                 <p class="muted">You can only invite users who are on your <a href="{% url 'hexquest:friends_list' %}" style="color: #38bdf8;">friends list</a>.</p>
                 <form method="post" class="invite-form">
                     {% csrf_token %}
                     <input type="hidden" name="action" value="invite_player">
-                    <select name="username">
-                        {% for user in available_users %}
-                            <option value="{{ user.username }}">{{ user.username }}</option>
-                        {% endfor %}
-                    </select>
-                    <button type="submit">Invite</button>
+                    <div style="display: flex; align-items: center; gap: 16px; margin-bottom: 8px;">
+                        <h3 style="margin: 0;">Invite Player</h3>
+                        <span class="status-message" style="display: none; font-weight: bold;"></span>
+                    </div>
+                    <div class="invite-controls">
+                        <select name="username" id="invite-username-select">
+                            {% for user in available_users %}
+                                <option value="{{ user.username }}" {% if user.is_unavailable %}disabled{% endif %}>
+                                    {{ user.username }}{% if user.is_unavailable %} (already invited/joined){% endif %}
+                                </option>
+                            {% endfor %}
+                        </select>
+                        <div style="display: flex; gap: 16px; align-items: center;">
+                            <button type="submit" id="invite-button">Invite</button>
+                        </div>
+                    </div>
                 </form>
             {% else %}
+                <h3>Invite Player</h3>
                 <p class="muted">No friends available to invite. <a href="{% url 'hexquest:friends_list' %}" style="color: #38bdf8;">Add some friends!</a></p>
             {% endif %}
         {% else %}
+            <h3>Invite Player</h3>
             <p class="muted">Only the game creator can invite players.</p>
         {% endif %}
     </section>
@@ -183,6 +219,7 @@
     const gameId = {{ game.id }};
     const gameMapUrl = "{% url 'hexquest:game_map' game.id %}";
     const currentUsername = "{{ request.user.username }}";
+    const currentUserId = {{ request.user.id }};
     const wsScheme = window.location.protocol === 'https:' ? 'wss://' : 'ws://';
     const chatWsUrl = wsScheme + window.location.host + `/ws/chat/${gameId}/`;
     const setupWsUrl = wsScheme + window.location.host + `/ws/setup/${gameId}/`;

@@ -23,6 +23,8 @@ urlpatterns = [
     path("games/<int:game_id>/cancel-action/", views.cancel_action, name="cancel_action"),
     path("games/<int:game_id>/updates/", views.game_updates, name="game_updates"),
     path("notifications/<int:notification_id>/accept/", views.accept_invite, name="accept_invite"),
+    path("notifications/<int:notification_id>/cancel/", views.cancel_invite, name="cancel_invite"),
+    path("games/<int:game_id>/kick/<int:player_id>/", views.kick_player, name="kick_player"),
     path("notifications/<int:notification_id>/ignore/", views.ignore_invite, name="ignore_invite"),
     path("friends/", views.friends_list, name="friends_list"),
 ]
