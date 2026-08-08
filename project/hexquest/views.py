@@ -762,12 +762,16 @@ def cancel_action(request, game_id):
     if request.method != "POST":
         return JsonResponse({"error": "Method not allowed"}, status=405)
 
-    try:
-        data = json.loads(request.body)
-        object_id = data.get("id")
-        object_type = data.get("type")
-    except (json.JSONDecodeError, AttributeError):
-        return JsonResponse({"error": "Invalid data"}, status=400)
+    if request.content_type == "application/json":
+        try:
+            data = json.loads(request.body)
+            object_id = data.get("id")
+            object_type = data.get("type")
+        except (json.JSONDecodeError, AttributeError):
+            return JsonResponse({"error": "Invalid data"}, status=400)
+    else:
+        object_id = request.POST.get("id")
+        object_type = request.POST.get("type")
 
     if object_type == "unit":
         obj = get_object_or_404(Unit, id=object_id, game_id=game_id)

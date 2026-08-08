@@ -144,3 +144,39 @@ class QueuedActionTests(TestCase):
         response = self.client.post(f"/games/{self.game.id}/unit/{self.unit.id}/move/", {"q": 1, "r": 1})
         self.assertEqual(response.status_code, 400)
         self.assertIn("error", response.json())
+
+    def test_cancel_queued_action(self):
+        # Queue an action
+        self.client.post(f"/games/{self.game.id}/unit/{self.unit.id}/move/", {"q": 1, "r": 0})
+        self.unit.refresh_from_db()
+        self.assertIsNotNone(self.unit.queued_action)
+
+        # Cancel the action (using form-encoded data, as HTMX does)
+        response = self.client.post(
+            f"/games/{self.game.id}/cancel-action/", 
+            {"id": self.unit.id, "type": "unit"}
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()['status'], 'ok')
+
+        self.unit.refresh_from_db()
+        self.assertIsNone(self.unit.queued_action)
+
+    def test_cancel_queued_action_json(self):
+        # Queue an action
+        self.client.post(f"/games/{self.game.id}/unit/{self.unit.id}/move/", {"q": 1, "r": 0})
+        self.unit.refresh_from_db()
+        self.assertIsNotNone(self.unit.queued_action)
+
+        # Cancel the action using JSON
+        import json
+        response = self.client.post(
+            f"/games/{self.game.id}/cancel-action/", 
+            data=json.dumps({"id": self.unit.id, "type": "unit"}),
+            content_type="application/json"
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()['status'], 'ok')
+
+        self.unit.refresh_from_db()
+        self.assertIsNone(self.unit.queued_action)

@@ -1,7 +1,7 @@
 from django.test import TestCase, Client
 from django.contrib.auth.models import User
-from .models import Game, Nation, Unit, HexTile, Building
-from .worldgen import generate_world
+from hexquest.models import Game, Nation, Unit, HexTile, Building
+from hexquest.worldgen import generate_world
 
 
 class WheatFarmTests(TestCase):
@@ -71,7 +71,9 @@ class WheatFarmTests(TestCase):
         self.assertFalse(Building.objects.filter(hex_tile=self.plains_tile).exists())
         
         # Simulate turn end
-        from .views import process_turn_end
+        self.nation1.has_ended_turn = True
+        self.nation1.save()
+        from hexquest.views import process_turn_end
         process_turn_end(self.game)
         
         # Verify building was created
@@ -90,7 +92,9 @@ class WheatFarmTests(TestCase):
         self.builder.save()
         
         # Simulate turn end
-        from .views import process_turn_end
+        self.nation1.has_ended_turn = True
+        self.nation1.save()
+        from hexquest.views import process_turn_end
         process_turn_end(self.game)
         
         # Verify food increased by 2
@@ -133,7 +137,9 @@ class WheatFarmTests(TestCase):
         initial_food = self.nation1.food
         
         # Simulate turn end
-        from .views import process_turn_end
+        self.nation1.has_ended_turn = True
+        self.nation1.save()
+        from hexquest.views import process_turn_end
         process_turn_end(self.game)
         
         # Verify both buildings were created

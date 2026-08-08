@@ -1,8 +1,8 @@
 from django.test import TestCase
 from django.contrib.auth.models import User
 from django.urls import reverse
-from .models import Game, Nation, HexTile, Unit, Settlement
-from .worldgen import generate_world
+from hexquest.models import Game, Nation, HexTile, Unit, Settlement
+from hexquest.worldgen import generate_world
 
 class SettlementExpansionTests(TestCase):
     def setUp(self):
@@ -45,7 +45,9 @@ class SettlementExpansionTests(TestCase):
         
         self.client.post(reverse('hexquest:unit_settle', kwargs={'game_id': self.game.id, 'unit_id': unit.id}), {'name': 'New City'})
         
-        from .views import process_turn_end
+        self.nation.has_ended_turn = True
+        self.nation.save()
+        from hexquest.views import process_turn_end
         process_turn_end(self.game)
 
         tile.refresh_from_db()
@@ -73,7 +75,9 @@ class SettlementExpansionTests(TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.json()['status'], 'queued')
 
-        from .views import process_turn_end
+        self.nation.has_ended_turn = True
+        self.nation.save()
+        from hexquest.views import process_turn_end
         process_turn_end(self.game)
 
         self.nation.refresh_from_db()
@@ -91,7 +95,9 @@ class SettlementExpansionTests(TestCase):
         
         self.client.post(reverse('hexquest:unit_settle', kwargs={'game_id': self.game.id, 'unit_id': unit.id}), {'name': 'New City'})
         
-        from .views import process_turn_end
+        self.nation.has_ended_turn = True
+        self.nation.save()
+        from hexquest.views import process_turn_end
         process_turn_end(self.game)
 
         settlement = Settlement.objects.get(game=self.game, q=0, r=0)

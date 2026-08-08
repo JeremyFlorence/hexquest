@@ -3,7 +3,7 @@ from django.contrib.auth.models import User
 from django.urls import reverse
 from django.utils import timezone
 import datetime
-from .models import Game, Nation, HexTile, Unit
+from hexquest.models import Game, Nation, HexTile, Unit
 
 class TurnSystemTests(TestCase):
     def setUp(self):

@@ -33,6 +33,8 @@ class UnitActionTests(TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.json()['status'], 'queued')
         
+        self.nation.has_ended_turn = True
+        self.nation.save()
         from hexquest.views import process_turn_end
         process_turn_end(self.game)
 
@@ -48,6 +50,8 @@ class UnitActionTests(TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.json()['status'], 'queued')
 
+        self.nation.has_ended_turn = True
+        self.nation.save()
         from hexquest.views import process_turn_end
         process_turn_end(self.game)
         

@@ -4,8 +4,8 @@ from django.test import TransactionTestCase
 from django.contrib.auth.models import User
 from django.urls import reverse
 
-from .consumers import SetupConsumer
-from .models import Game, Nation, Friendship, Notification
+from hexquest.consumers import SetupConsumer
+from hexquest.models import Game, Nation, Friendship, Notification
 
 
 class GameSetupAJAXTests(TransactionTestCase):

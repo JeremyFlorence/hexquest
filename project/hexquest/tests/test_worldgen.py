@@ -1,8 +1,8 @@
 from django.test import TestCase
 from django.contrib.auth.models import User
 from django.urls import reverse
-from .models import Game, Nation, HexTile, Unit
-from .worldgen import generate_world
+from hexquest.models import Game, Nation, HexTile, Unit
+from hexquest.worldgen import generate_world
 
 class WorldGenTests(TestCase):
     def setUp(self):

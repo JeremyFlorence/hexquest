@@ -4,8 +4,8 @@ from django.test import TestCase, TransactionTestCase
 from django.contrib.auth.models import User
 from django.urls import reverse
 
-from .consumers import SetupConsumer
-from .models import Game, Nation
+from hexquest.consumers import SetupConsumer
+from hexquest.models import Game, Nation
 
 
 async def _connect_setup(user, game_id):

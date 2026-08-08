@@ -1,7 +1,7 @@
 from django.test import TestCase, Client
 from django.contrib.auth.models import User
 from django.urls import reverse
-from .models import Game, Nation, HexTile, Unit, Settlement
+from hexquest.models import Game, Nation, HexTile, Unit, Settlement
 
 class SettlementTierTests(TestCase):
     def setUp(self):
@@ -28,7 +28,9 @@ class SettlementTierTests(TestCase):
         """Test that a new settlement starts as a Village."""
         self.client.post(reverse('hexquest:unit_settle', kwargs={'game_id': self.game.id, 'unit_id': self.unit.id}), {'name': 'New City'})
         
-        from .views import process_turn_end
+        self.nation.has_ended_turn = True
+        self.nation.save()
+        from hexquest.views import process_turn_end
         process_turn_end(self.game)
 
         settlement = Settlement.objects.get(game=self.game, q=0, r=0)
@@ -58,7 +60,9 @@ class SettlementTierTests(TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.json()['status'], 'queued')
         
-        from .views import process_turn_end
+        self.nation.has_ended_turn = True
+        self.nation.save()
+        from hexquest.views import process_turn_end
         process_turn_end(self.game)
 
         settlement.refresh_from_db()
@@ -87,7 +91,9 @@ class SettlementTierTests(TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.json()['status'], 'queued')
         
-        from .views import process_turn_end
+        self.nation.has_ended_turn = True
+        self.nation.save()
+        from hexquest.views import process_turn_end
         process_turn_end(self.game)
 
         settlement.refresh_from_db()
