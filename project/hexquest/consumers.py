@@ -1,9 +1,27 @@
+import asyncio
+from concurrent.futures import ThreadPoolExecutor
 from asgiref.sync import async_to_sync
 from channels.db import database_sync_to_async
 from channels.generic.websocket import AsyncJsonWebsocketConsumer
 from channels.layers import get_channel_layer
 
-from .models import ChatMessage, Game
+from .models import ChatMessage, Game, HexTile, Nation, Unit, Settlement
+
+
+_BROADCAST_EXECUTOR = ThreadPoolExecutor(max_workers=4, thread_name_prefix="broadcast")
+
+
+def _dispatch_async(coro_func):
+    def _runner():
+        try:
+            async_to_sync(coro_func)()
+        except BaseException:
+            pass
+
+    try:
+        _BROADCAST_EXECUTOR.submit(_runner)
+    except BaseException:
+        pass
 
 
 def _chat_group(game_id):
@@ -52,10 +70,14 @@ def broadcast_setup_update(game):
     if channel_layer is None:
         return
     payload = _serialize_setup(game)
-    async_to_sync(channel_layer.group_send)(
-        _setup_group(game.id),
-        {"type": "setup.update", "payload": payload},
-    )
+
+    async def _do_send():
+        await channel_layer.group_send(
+            _setup_group(game.id),
+            {"type": "setup.update", "payload": payload},
+        )
+
+    _dispatch_async(_do_send)
 
 
 def broadcast_setup_abandoned(game_id):
@@ -63,15 +85,27 @@ def broadcast_setup_abandoned(game_id):
     channel_layer = get_channel_layer()
     if channel_layer is None:
         return
-    async_to_sync(channel_layer.group_send)(
-        _setup_group(game_id),
-        {"type": "setup.abandoned"},
-    )
+
+    async def _do_send():
+        await channel_layer.group_send(
+            _setup_group(game_id),
+            {"type": "setup.abandoned"},
+        )
+
+    _dispatch_async(_do_send)
 
 
-def _serialize_game_update(game, nation):
+def _serialize_game_update(game, nation, all_units=None, all_settlements=None, all_hexes=None):
     from django.utils import timezone
     remaining_time = int((game.turn_end_time - timezone.now()).total_seconds()) if game.turn_end_time else 0
+
+    if all_units is None:
+        all_units = list(Unit.objects.filter(game=game).select_related("nation__player").all())
+    if all_settlements is None:
+        all_settlements = list(Settlement.objects.filter(game=game).select_related("nation__player").all())
+    if all_hexes is None:
+        all_hexes = list(HexTile.objects.filter(game=game).select_related("owner__player", "settlement").all())
+
     return {
         "is_finished": game.is_finished,
         "current_turn": game.current_turn,
@@ -79,7 +113,7 @@ def _serialize_game_update(game, nation):
         "has_ended_turn": nation.has_ended_turn,
         "gold": nation.gold,
         "food": nation.food,
-        "unit_count": nation.units.count(),
+        "unit_count": len([u for u in all_units if u.nation_id == nation.id]),
         "units": [
             {
                 "id": u.id,
@@ -91,7 +125,7 @@ def _serialize_game_update(game, nation):
                 "owner_id": u.nation.player.id,
                 "last_action_turn": u.last_action_turn,
                 "queued_action": bool(u.queued_action)
-            } for u in game.units.all()
+            } for u in all_units
         ],
         "settlements": [
             {
@@ -105,7 +139,7 @@ def _serialize_game_update(game, nation):
                 "owner_id": s.nation.player.id,
                 "last_action_turn": s.last_action_turn,
                 "queued_action": bool(s.queued_action)
-            } for s in game.settlements.all()
+            } for s in all_settlements
         ],
         "hexes": [
             {
@@ -116,7 +150,7 @@ def _serialize_game_update(game, nation):
                 "owner_color": h.owner.color if h.owner else None,
                 "settlement": h.settlement.name if h.settlement else None,
                 "settlement_id": h.settlement.id if h.settlement else None
-            } for h in game.hexes.all()
+            } for h in all_hexes
         ],
         "queued_actions": [
             {
@@ -126,7 +160,7 @@ def _serialize_game_update(game, nation):
                 "action": u.queued_action,
                 "q": u.q,
                 "r": u.r
-            } for u in nation.units.exclude(queued_action__isnull=True)
+            } for u in all_units if u.nation_id == nation.id and u.queued_action
         ] + [
             {
                 "id": s.id,
@@ -135,7 +169,7 @@ def _serialize_game_update(game, nation):
                 "action": s.queued_action,
                 "q": s.q,
                 "r": s.r
-            } for s in nation.settlements.exclude(queued_action__isnull=True)
+            } for s in all_settlements if s.nation_id == nation.id and s.queued_action
         ]
     }
 
@@ -149,26 +183,39 @@ def broadcast_game_update(game, user=None):
     if channel_layer is None:
         return
 
+    # Prepare all payloads in sync context to ensure transaction visibility
+    # and to avoid N+1 queries in the async loop.
+    all_units = list(Unit.objects.filter(game=game).select_related("nation__player").all())
+    all_settlements = list(Settlement.objects.filter(game=game).select_related("nation__player").all())
+    all_hexes = list(HexTile.objects.filter(game=game).select_related("owner__player", "settlement").all())
+
+    broadcasts = []
     if user:
         try:
             nation = game.nations.get(player=user)
-            payload = _serialize_game_update(game, nation)
-            async_to_sync(channel_layer.group_send)(
-                _user_game_group(game.id, user.id),
-                {"type": "game.update", "payload": payload},
-            )
+            payload = _serialize_game_update(game, nation, all_units, all_settlements, all_hexes)
+            broadcasts.append((_user_game_group(game.id, user.id), payload))
         except Exception:
             pass
     else:
-        # Broadcast to all players in the game
         for nation in game.nations.select_related("player").all():
-            payload = _serialize_game_update(game, nation)
-            async_to_sync(channel_layer.group_send)(
-                _user_game_group(game.id, nation.player.id),
+            payload = _serialize_game_update(game, nation, all_units, all_settlements, all_hexes)
+            broadcasts.append((_user_game_group(game.id, nation.player.id), payload))
+
+    if not broadcasts:
+        return
+
+    async def _do_broadcast():
+        tasks = []
+        for group_name, payload in broadcasts:
+            tasks.append(channel_layer.group_send(
+                group_name,
                 {"type": "game.update", "payload": payload},
-            )
-        # Note: We removed the game.refresh broadcast to encourage surgical updates.
-        # If observers exist, they might need a general update payload sent to _game_group.
+            ))
+        if tasks:
+            await asyncio.gather(*tasks)
+
+    _dispatch_async(_do_broadcast)
 
 
 class ChatConsumer(AsyncJsonWebsocketConsumer):
