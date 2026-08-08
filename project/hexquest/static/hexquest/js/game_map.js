@@ -720,6 +720,10 @@ document.addEventListener('DOMContentLoaded', () => {
     renderUnits();
     renderSettlements();
 
+    if (currentTurn === 1) {
+        centerOnPlayer();
+    }
+
     const timerDisplay = document.getElementById('timer-display');
     const turnDisplay = document.getElementById('turn-display');
     const endTurnBtn = document.getElementById('end-turn-btn');
@@ -1058,6 +1062,29 @@ document.addEventListener('DOMContentLoaded', () => {
         actionMenu.style.left = `${menuStartX + dx}px`;
         actionMenu.style.top = `${menuStartY + dy}px`;
     });
+
+    function centerOnHex(q, r) {
+        const mapWrap = document.querySelector('.map-wrap');
+        if (!mapWrap) return;
+    
+        const pos = axialToPixel(q, r);
+    
+        // We want to center the point (pos.x * scale, pos.y * scale) in the viewport
+        mapWrap.scrollLeft = (pos.x * scale) - (mapWrap.clientWidth / 2);
+        mapWrap.scrollTop = (pos.y * scale) - (mapWrap.clientHeight / 2);
+    }
+
+    function centerOnPlayer() {
+        const playerSettlement = document.querySelector(`.settlement-group[data-owner-id="${currentUserId}"]`);
+        const playerUnit = document.querySelector(`.unit-group[data-owner-id="${currentUserId}"]`);
+    
+        const target = playerSettlement || playerUnit;
+        if (target) {
+            const q = Number(target.dataset.q);
+            const r = Number(target.dataset.r);
+            centerOnHex(q, r);
+        }
+    }
 
     document.addEventListener('mouseup', () => {
         isDragging = false;
