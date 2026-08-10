@@ -7,6 +7,13 @@ const minScale = 0.5;
 const maxScale = 3.0;
 const zoomSpeed = 0.1;
 
+function formatBuildingLabel(buildingType) {
+    return buildingType
+        .split("_")
+        .map((word) => word[0].toUpperCase() + word.slice(1))
+        .join(" ");
+}
+
 const terrainColors = {
     water: "#2563eb",
     plains: "#84cc16",
@@ -211,10 +218,7 @@ function renderSingleBuilding(group) {
     }
 
     const title = document.createElementNS("http://www.w3.org/2000/svg", "title");
-    title.textContent = buildingType
-        .split("_")
-        .map((word) => word[0].toUpperCase() + word.slice(1))
-        .join(" ");
+    title.textContent = formatBuildingLabel(buildingType);
     icon.appendChild(title);
 
     relayoutHex(q, r);
@@ -450,7 +454,7 @@ function selectSettlement(group) {
             msg.style.fontSize = "0.875rem";
             actionButtons.appendChild(msg);
         } else {
-            showSettlementActions(id, tier, population, actionButtons);
+            showSettlementActions(id, tier, population, ownerId, actionButtons);
         }
 
         // Rename Action (Rename is usually not considered an 'action' that exhausts turn)
@@ -486,7 +490,7 @@ function selectSettlement(group) {
     }
 }
 
-function showSettlementActions(id, tier, population, container) {
+function showSettlementActions(id, tier, population, ownerId, container) {
     let upgradeReq = 0;
     let nextTier = "";
 
@@ -509,9 +513,12 @@ function showSettlementActions(id, tier, population, container) {
         container.appendChild(upgradeBtn);
     }
 
-    // Expand Action
+    // Expand Action (cost scales with the nation's total owned tile count,
+    // mirroring the server-side formula in expand_settlement/process_turn_end)
+    const ownedTilesCount = document.querySelectorAll(`.hex-group[data-owner-id="${ownerId}"]`).length;
+    const expandCost = 10 + (ownedTilesCount * 5);
     const expandBtn = document.createElement("button");
-    expandBtn.textContent = "Expand Territory";
+    expandBtn.textContent = `Expand Territory 💰${expandCost}`;
     expandBtn.onclick = () => showExpandTargets(selectedUnit);
     container.appendChild(expandBtn);
 }
@@ -616,12 +623,15 @@ function showUnitActions(id, type, container) {
         container.appendChild(settleBtn);
     }
 
-    // Build Action
+    // Build Actions (one button per building type, showing its gold cost)
     if (type === "builder") {
-        const buildBtn = document.createElement("button");
-        buildBtn.textContent = "Build Wheat Farm";
-        buildBtn.onclick = () => performBuild(id, "wheat_farm");
-        container.appendChild(buildBtn);
+        Object.keys(buildingCosts).forEach((buildingType) => {
+            const cost = buildingCosts[buildingType];
+            const buildBtn = document.createElement("button");
+            buildBtn.textContent = `Build ${formatBuildingLabel(buildingType)} 💰${cost}`;
+            buildBtn.onclick = () => performBuild(id, buildingType);
+            container.appendChild(buildBtn);
+        });
     }
 }
 

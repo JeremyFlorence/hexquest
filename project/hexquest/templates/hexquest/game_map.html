@@ -42,6 +42,7 @@
     const gameWsUrl = wsScheme + window.location.host + `/ws/game/${gameId}/`;
     const chatWsUrl = wsScheme + window.location.host + `/ws/chat/${gameId}/`;
     const currentUsername = "{{ request.user.username }}";
+    const buildingCosts = {{ building_costs_json|safe }};
     let currentTurn = {{ game.current_turn }};
     let remainingTime = {{ remaining_time }};
     let hasEndedTurn = {% if nation.has_ended_turn %}true{% else %}false{% endif %};

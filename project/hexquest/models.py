@@ -163,6 +163,10 @@ class Building(models.Model):
         ("wheat_farm", "Wheat Farm"),
     ]
 
+    BUILDING_COSTS = {
+        "wheat_farm": 10,
+    }
+
     game = models.ForeignKey(Game, on_delete=models.CASCADE, related_name="buildings")
     hex_tile = models.OneToOneField(HexTile, on_delete=models.CASCADE, related_name="building")
     building_type = models.CharField(max_length=20, choices=BUILDING_TYPES)

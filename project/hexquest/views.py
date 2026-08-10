@@ -324,6 +324,7 @@ def game_map(request, game_id):
             "remaining_time": int((game.turn_end_time - timezone.now()).total_seconds()) if game.turn_end_time else 0,
             "queued_actions": _get_queued_actions(nation),
             "chat_messages": chat_messages,
+            "building_costs_json": json.dumps(Building.BUILDING_COSTS),
         },
     )
 
@@ -421,12 +422,16 @@ def process_turn_end(game):
                 tile = HexTile.objects.filter(game=game, q=unit.q, r=unit.r).first()
                 if tile and unit.unit_type == 'builder' and tile.owner == unit.nation and tile.terrain == "plains":
                     if not hasattr(tile, 'building') or not tile.building:
-                        Building.objects.create(
-                            game=game,
-                            hex_tile=tile,
-                            building_type=building_type
-                        )
-                        unit.last_action_turn = game.current_turn
+                        cost = Building.BUILDING_COSTS.get(building_type, 0)
+                        if unit.nation.gold >= cost:
+                            unit.nation.gold -= cost
+                            unit.nation.save()
+                            Building.objects.create(
+                                game=game,
+                                hex_tile=tile,
+                                building_type=building_type
+                            )
+                            unit.last_action_turn = game.current_turn
 
             unit.save()
 
@@ -855,6 +860,10 @@ def builder_build(request, game_id, unit_id):
 
     if hasattr(tile, 'building') and tile.building:
         return JsonResponse({"error": "A building already exists on this tile"}, status=400)
+
+    cost = Building.BUILDING_COSTS.get(building_type, 0)
+    if unit.nation.gold < cost:
+        return JsonResponse({"error": f"Not enough gold. Need {cost}"}, status=400)
 
     unit.queued_action = {"type": "build", "building_type": building_type}
     unit.save()
