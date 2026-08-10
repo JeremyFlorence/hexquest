@@ -5,7 +5,7 @@ from channels.db import database_sync_to_async
 from channels.generic.websocket import AsyncJsonWebsocketConsumer
 from channels.layers import get_channel_layer
 
-from .models import ChatMessage, Game, HexTile, Nation, Unit, Settlement
+from .models import Building, ChatMessage, Game, HexTile, Nation, Unit, Settlement
 
 
 _BROADCAST_EXECUTOR = ThreadPoolExecutor(max_workers=4, thread_name_prefix="broadcast")
@@ -126,6 +126,13 @@ def broadcast_setup_abandoned(game_id):
     _dispatch_async(_do_send)
 
 
+def _building_type(hex_tile):
+    try:
+        return hex_tile.building.building_type
+    except Building.DoesNotExist:
+        return None
+
+
 def _serialize_game_update(game, nation, all_units=None, all_settlements=None, all_hexes=None):
     from django.utils import timezone
     remaining_time = int((game.turn_end_time - timezone.now()).total_seconds()) if game.turn_end_time else 0
@@ -135,7 +142,7 @@ def _serialize_game_update(game, nation, all_units=None, all_settlements=None, a
     if all_settlements is None:
         all_settlements = list(Settlement.objects.filter(game=game).select_related("nation__player").all())
     if all_hexes is None:
-        all_hexes = list(HexTile.objects.filter(game=game).select_related("owner__player", "settlement").all())
+        all_hexes = list(HexTile.objects.filter(game=game).select_related("owner__player", "settlement", "building").all())
 
     return {
         "is_finished": game.is_finished,
@@ -180,7 +187,8 @@ def _serialize_game_update(game, nation, all_units=None, all_settlements=None, a
                 "owner_id": h.owner.player.id if h.owner else None,
                 "owner_color": h.owner.color if h.owner else None,
                 "settlement": h.settlement.name if h.settlement else None,
-                "settlement_id": h.settlement.id if h.settlement else None
+                "settlement_id": h.settlement.id if h.settlement else None,
+                "building": _building_type(h)
             } for h in all_hexes
         ],
         "queued_actions": [
@@ -218,7 +226,7 @@ def broadcast_game_update(game, user=None):
     # and to avoid N+1 queries in the async loop.
     all_units = list(Unit.objects.filter(game=game).select_related("nation__player").all())
     all_settlements = list(Settlement.objects.filter(game=game).select_related("nation__player").all())
-    all_hexes = list(HexTile.objects.filter(game=game).select_related("owner__player", "settlement").all())
+    all_hexes = list(HexTile.objects.filter(game=game).select_related("owner__player", "settlement", "building").all())
 
     broadcasts = []
     if user:

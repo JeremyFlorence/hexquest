@@ -92,6 +92,134 @@ function renderHexes() {
     });
 }
 
+// A hex tile can hold at most 2 units, or 1 unit alongside a building/settlement.
+// Icon shapes are drawn in local coordinates centered on (0, 0); relayoutHex
+// positions/scales each occupant's group via an SVG transform so a shared hex
+// never renders overlapping icons.
+const SHARED_HEX_SLOT_DX = 7;
+const SHARED_HEX_SCALE = 0.65;
+
+function relayoutHex(q, r) {
+    q = Number(q);
+    r = Number(r);
+    const center = axialToPixel(q, r);
+    const hexGroup = document.querySelector(`.hex-group[data-q="${q}"][data-r="${r}"]`);
+
+    const settlementGroup = document.querySelector(`.settlement-group[data-q="${q}"][data-r="${r}"]`);
+    const buildingIcon = hexGroup ? hexGroup.querySelector(".building") : null;
+    const structureEl = settlementGroup || buildingIcon;
+
+    const unitGroups = Array.from(
+        document.querySelectorAll(`.unit-group[data-q="${q}"][data-r="${r}"]`)
+    ).sort((a, b) => Number(a.dataset.id) - Number(b.dataset.id));
+
+    const occupants = structureEl ? [structureEl, ...unitGroups] : unitGroups;
+    if (occupants.length === 0) return;
+
+    if (occupants.length === 1) {
+        occupants[0].setAttribute("transform", `translate(${center.x}, ${center.y}) scale(1)`);
+        return;
+    }
+
+    // 2 occupants share the hex (a structure + 1 unit, or 2 units): fan them out
+    // side by side so they don't overlap. Any extra occupants beyond the
+    // expected max of 2 are nudged further out as a defensive fallback.
+    occupants.forEach((el, i) => {
+        const dx = i === 0 ? -SHARED_HEX_SLOT_DX : SHARED_HEX_SLOT_DX;
+        const dy = i <= 1 ? 0 : (i - 1) * 6;
+        el.setAttribute("transform", `translate(${center.x + dx}, ${center.y + dy}) scale(${SHARED_HEX_SCALE})`);
+    });
+}
+
+function renderBuildings() {
+    const groups = document.querySelectorAll(".hex-group");
+    groups.forEach((group) => {
+        renderSingleBuilding(group);
+    });
+}
+
+function renderSingleBuilding(group) {
+    if (!group) return;
+
+    const q = group.dataset.q;
+    const r = group.dataset.r;
+    if (q === undefined || r === undefined) return;
+
+    const buildingType = group.dataset.building;
+    let icon = group.querySelector(".building");
+
+    if (!buildingType) {
+        if (icon) icon.remove();
+        relayoutHex(q, r);
+        return;
+    }
+
+    if (!icon) {
+        icon = document.createElementNS("http://www.w3.org/2000/svg", "g");
+        icon.setAttribute("class", "building");
+        group.appendChild(icon);
+    }
+    icon.innerHTML = '';
+
+    // Icon is drawn in local coordinates centered on (0, 0); relayoutHex
+    // applies the actual hex position (and scale, if the hex is shared).
+    if (buildingType === "wheat_farm") {
+        // Stem
+        const stem = document.createElementNS("http://www.w3.org/2000/svg", "line");
+        stem.setAttribute("x1", 0);
+        stem.setAttribute("y1", 8);
+        stem.setAttribute("x2", 0);
+        stem.setAttribute("y2", -8);
+        stem.setAttribute("stroke", "#8b7355");
+        stem.setAttribute("stroke-width", "2");
+        stem.setAttribute("stroke-linecap", "round");
+        icon.appendChild(stem);
+
+        // Left stalk
+        const leftStalk = document.createElementNS("http://www.w3.org/2000/svg", "line");
+        leftStalk.setAttribute("x1", -4);
+        leftStalk.setAttribute("y1", 8);
+        leftStalk.setAttribute("x2", -6);
+        leftStalk.setAttribute("y2", -4);
+        leftStalk.setAttribute("stroke", "#8b7355");
+        leftStalk.setAttribute("stroke-width", "1.5");
+        leftStalk.setAttribute("stroke-linecap", "round");
+        icon.appendChild(leftStalk);
+
+        // Right stalk
+        const rightStalk = document.createElementNS("http://www.w3.org/2000/svg", "line");
+        rightStalk.setAttribute("x1", 4);
+        rightStalk.setAttribute("y1", 8);
+        rightStalk.setAttribute("x2", 6);
+        rightStalk.setAttribute("y2", -4);
+        rightStalk.setAttribute("stroke", "#8b7355");
+        rightStalk.setAttribute("stroke-width", "1.5");
+        rightStalk.setAttribute("stroke-linecap", "round");
+        icon.appendChild(rightStalk);
+
+        // Grain heads
+        [[0, -9], [-6, -5], [6, -5]].forEach(([cx, cy]) => {
+            const grain = document.createElementNS("http://www.w3.org/2000/svg", "circle");
+            grain.setAttribute("cx", cx);
+            grain.setAttribute("cy", cy);
+            grain.setAttribute("r", "2.5");
+            grain.setAttribute("fill", "#eab308");
+            grain.setAttribute("stroke", "#713f12");
+            grain.setAttribute("stroke-width", "0.5");
+            icon.appendChild(grain);
+        });
+    }
+
+    const title = document.createElementNS("http://www.w3.org/2000/svg", "title");
+    title.textContent = buildingType
+        .split("_")
+        .map((word) => word[0].toUpperCase() + word.slice(1))
+        .join(" ");
+    icon.appendChild(title);
+
+    relayoutHex(q, r);
+}
+
 function renderUnits() {
     const groups = document.querySelectorAll(".unit-group");
     groups.forEach((group) => {
@@ -112,8 +240,8 @@ function renderSingleUnit(group) {
     const label = group.dataset.label || "?";
     const unitType = group.dataset.type;
 
-    const position = axialToPixel(q, r);
-
+    // Shapes are drawn in local coordinates centered on (0, 0); relayoutHex
+    // applies the actual hex position (and scale, if the hex is shared).
     if (unitType === "builder") {
         // Clear non-builder elements if they exist
         if (group.querySelector("circle")) {
@@ -132,15 +260,15 @@ function renderSingleUnit(group) {
             });
             group.appendChild(hammerHead);
         }
-        hammerHead.setAttribute("x", position.x - 6);
-        hammerHead.setAttribute("y", position.y - 8);
+        hammerHead.setAttribute("x", -6);
+        hammerHead.setAttribute("y", -8);
         hammerHead.setAttribute("width", "12");
         hammerHead.setAttribute("height", "8");
         hammerHead.setAttribute("fill", color || "#ffffff");
         hammerHead.setAttribute("stroke", "#020617");
         hammerHead.setAttribute("stroke-width", "2");
         hammerHead.setAttribute("rx", "1");
-        
+
         // Hammer handle (line)
         let hammerHandle = group.querySelector("line");
         if (!hammerHandle) {
@@ -148,10 +276,10 @@ function renderSingleUnit(group) {
             hammerHandle.style.pointerEvents = "none";
             group.appendChild(hammerHandle);
         }
-        hammerHandle.setAttribute("x1", position.x);
-        hammerHandle.setAttribute("y1", position.y);
-        hammerHandle.setAttribute("x2", position.x);
-        hammerHandle.setAttribute("y2", position.y + 8);
+        hammerHandle.setAttribute("x1", 0);
+        hammerHandle.setAttribute("y1", 0);
+        hammerHandle.setAttribute("x2", 0);
+        hammerHandle.setAttribute("y2", 8);
         hammerHandle.setAttribute("stroke", "#8b7355");
         hammerHandle.setAttribute("stroke-width", "2");
         hammerHandle.setAttribute("stroke-linecap", "round");
@@ -173,8 +301,8 @@ function renderSingleUnit(group) {
             });
             group.appendChild(circle);
         }
-        circle.setAttribute("cx", position.x);
-        circle.setAttribute("cy", position.y);
+        circle.setAttribute("cx", 0);
+        circle.setAttribute("cy", 0);
         circle.setAttribute("r", "8");
         circle.setAttribute("fill", color || "#ffffff");
         circle.setAttribute("stroke", "#020617");
@@ -186,13 +314,14 @@ function renderSingleUnit(group) {
             text.setAttribute("class", "unit-label");
             group.appendChild(text);
         }
-        text.setAttribute("x", position.x);
-        text.setAttribute("y", position.y + 1);
+        text.setAttribute("x", 0);
+        text.setAttribute("y", 1);
         text.textContent = label;
     }
 
     // Ensure unit groups are placed on top of hexes/settlements
     svg.appendChild(group);
+    relayoutHex(q, r);
 }
 
 function renderSettlements() {
@@ -211,8 +340,8 @@ function renderSingleSettlement(group) {
     const tier = group.dataset.tier;
     const population = group.dataset.population;
 
-    const position = axialToPixel(q, r);
-    
+    // Shapes are drawn in local coordinates centered on (0, 0); relayoutHex
+    // applies the actual hex position (and scale, if the hex is shared).
     let icon = group.querySelector(".settlement");
     let needsNewIcon = false;
 
@@ -248,17 +377,17 @@ function renderSingleSettlement(group) {
     }
 
     if (tier === "village") {
-        icon.setAttribute("cx", position.x);
-        icon.setAttribute("cy", position.y);
+        icon.setAttribute("cx", 0);
+        icon.setAttribute("cy", 0);
     } else if (tier === "town") {
-        icon.setAttribute("x", position.x - 7);
-        icon.setAttribute("y", position.y - 7);
+        icon.setAttribute("x", -7);
+        icon.setAttribute("y", -7);
     } else if (tier === "city") {
         const points = [];
         for (let i = 0; i < 10; i++) {
             const angle = (Math.PI / 5) * i - Math.PI / 2;
             const radius = i % 2 === 0 ? 10 : 4;
-            points.push(`${position.x + radius * Math.cos(angle)},${position.y + radius * Math.sin(angle)}`);
+            points.push(`${radius * Math.cos(angle)},${radius * Math.sin(angle)}`);
         }
         icon.setAttribute("d", `M ${points.join(" L ")} Z`);
     }
@@ -275,6 +404,7 @@ function renderSingleSettlement(group) {
     title.textContent = `${name} (${tier}, Pop: ${population})`;
 
     svg.appendChild(group);
+    relayoutHex(q, r);
 }
 
 function closeActionMenu() {
@@ -717,6 +847,7 @@ async function performRename(settlementId, newName) {
 
 document.addEventListener('DOMContentLoaded', () => {
     renderHexes();
+    renderBuildings();
     renderUnits();
     renderSettlements();
 
@@ -742,9 +873,15 @@ document.addEventListener('DOMContentLoaded', () => {
 
         const currentIds = new Set(units.map(u => String(u.id)));
 
+        // Track hexes whose occupants changed so we can relayout them even if
+        // no entity remains there to trigger relayoutHex itself (e.g. a unit
+        // that moved away or was removed).
+        const affectedHexes = new Set();
+
         // Remove units that no longer exist
         existingGroups.forEach((group, id) => {
             if (!currentIds.has(id)) {
+                affectedHexes.add(`${group.dataset.q},${group.dataset.r}`);
                 group.remove();
             }
         });
@@ -752,6 +889,7 @@ document.addEventListener('DOMContentLoaded', () => {
         // Add or update units
         units.forEach(u => {
             let group = existingGroups.get(String(u.id));
+            const oldKey = group ? `${group.dataset.q},${group.dataset.r}` : null;
             if (!group) {
                 group = document.createElementNS("http://www.w3.org/2000/svg", "g");
                 group.setAttribute("class", "unit-group");
@@ -770,8 +908,18 @@ document.addEventListener('DOMContentLoaded', () => {
             group.dataset.lastActionTurn = u.last_action_turn;
             group.dataset.queuedAction = u.queued_action;
 
-            // Re-render the individual unit
+            const newKey = `${u.q},${u.r}`;
+            if (oldKey && oldKey !== newKey) affectedHexes.add(oldKey);
+            affectedHexes.add(newKey);
+
+            // Re-render the individual unit (also relayouts its new hex)
             renderSingleUnit(group);
+        });
+
+        // Relayout any hex left behind by a removed or moved-away unit.
+        affectedHexes.forEach(key => {
+            const [hq, hr] = key.split(",");
+            relayoutHex(hq, hr);
         });
     }
 
@@ -818,6 +966,8 @@ document.addEventListener('DOMContentLoaded', () => {
                 group.dataset.ownerColor = h.owner_color || "";
                 group.dataset.settlement = h.settlement || "";
                 group.dataset.settlementId = h.settlement_id || "";
+                group.dataset.building = h.building || "";
+                renderSingleBuilding(group);
 
                 // Update the polygon stroke
                 const polygon = group.querySelector("polygon");

@@ -1,4 +1,5 @@
 import json
+from collections import Counter
 from django.contrib import messages
 from django.contrib.auth import login
 from django.contrib.auth.decorators import login_required
@@ -295,7 +296,7 @@ def game_map(request, game_id):
     hexes = (
         HexTile.objects
         .filter(game=game)
-        .select_related("owner__player")
+        .select_related("owner__player", "building")
         .order_by("r", "q")
     )
 
@@ -345,6 +346,12 @@ def process_turn_end(game):
         # Check for activity in this turn
         activity_occurred = False
 
+        # Tracks how many units currently sit on each hex, so moves processed
+        # below can't push a hex over its capacity (2 units, or 1 if it has a
+        # building/settlement) even when several units queue a move onto the
+        # same destination in the same turn.
+        occupancy = Counter(game.units.values_list("q", "r"))
+
         # Process queued actions for units
         units_with_queued = list(game.units.exclude(queued_action__isnull=True))
         for unit in units_with_queued:
@@ -355,16 +362,24 @@ def process_turn_end(game):
             if action['type'] == 'move':
                 q, r = action['q'], action['r']
                 if hex_distance(unit.q, unit.r, q, r) <= unit.movement:
-                    target_tile = HexTile.objects.filter(game=game, q=q, r=r).first()
+                    target_tile = HexTile.objects.filter(game=game, q=q, r=r).select_related("settlement", "building").first()
                     if target_tile and target_tile.terrain != "water":
-                        unit.q = q
-                        unit.r = r
-                        unit.last_action_turn = game.current_turn
+                        old_pos = (unit.q, unit.r)
+                        new_pos = (q, r)
+                        if new_pos == old_pos or occupancy[new_pos] < _hex_unit_capacity(target_tile):
+                            occupancy[old_pos] -= 1
+                            occupancy[new_pos] += 1
+                            unit.q = q
+                            unit.r = r
+                            unit.last_action_turn = game.current_turn
 
             elif action['type'] == 'settle':
                 name = action['name']
                 tile = HexTile.objects.filter(game=game, q=unit.q, r=unit.r).first()
-                if tile and not tile.owner and unit.unit_type == 'settler':
+                # A settled tile can only hold 1 unit, so bail out if another
+                # unit is also standing here (occupancy still counts the
+                # settler itself, hence the <= 1).
+                if tile and not tile.owner and unit.unit_type == 'settler' and occupancy[(unit.q, unit.r)] <= 1:
                     with transaction.atomic():
                         settlement = Settlement.objects.create(
                             game=game,
@@ -387,8 +402,12 @@ def process_turn_end(game):
                                 adj_tile.owner = unit.nation
                                 adj_tile.settlement = settlement
                                 adj_tile.save()
-                                # Place builder on first available adjacent tile
-                                if not builder_placed:
+                                # Place builder on the first available adjacent
+                                # tile that isn't already occupied (it becomes
+                                # settlement territory, capping it at 1 unit).
+                                if not builder_placed and occupancy[(n_q, n_r)] == 0:
+                                    occupancy[(unit.q, unit.r)] -= 1
+                                    occupancy[(n_q, n_r)] += 1
                                     unit.q = n_q
                                     unit.r = n_r
                                     builder_placed = True
@@ -599,6 +618,12 @@ def accept_invite(request, notification_id):
     return redirect("hexquest:game_setup", game_id=game.id)
 
 
+def _hex_unit_capacity(tile):
+    """A hex holds at most 2 units, or 1 if it has a building or settlement."""
+    has_structure = bool(tile.settlement_id) or (hasattr(tile, "building") and tile.building is not None)
+    return 1 if has_structure else 2
+
+
 @login_required
 def unit_move(request, game_id, unit_id):
     if request.method != "POST":
@@ -625,9 +650,16 @@ def unit_move(request, game_id, unit_id):
         return JsonResponse({"error": "Too far to move"}, status=400)
 
     # Check if tile exists and is not water
-    target_tile = HexTile.objects.filter(game_id=game_id, q=q, r=r).first()
+    target_tile = HexTile.objects.filter(game_id=game_id, q=q, r=r).select_related("settlement", "building").first()
     if not target_tile or target_tile.terrain == "water":
         return JsonResponse({"error": "Cannot move there"}, status=400)
+
+    # Check hex capacity (this is an early check for immediate feedback;
+    # process_turn_end re-validates authoritatively since other units may
+    # also queue a move onto the same hex this turn).
+    occupants = Unit.objects.filter(game_id=game_id, q=q, r=r).exclude(id=unit.id).count()
+    if occupants >= _hex_unit_capacity(target_tile):
+        return JsonResponse({"error": "Destination hex is full"}, status=400)
 
     unit.queued_action = {"type": "move", "q": q, "r": r}
     unit.save()

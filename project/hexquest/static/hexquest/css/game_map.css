@@ -275,6 +275,10 @@ svg {
     pointer-events: visiblePainted;
 }
 
+.building {
+    pointer-events: none;
+}
+
 .unit-label {
     fill: #ffffff;
     font-size: 10px;

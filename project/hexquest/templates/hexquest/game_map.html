@@ -66,6 +66,7 @@
                 data-owner-color="{% if hex.owner %}{{ hex.owner.color }}{% endif %}"
                 data-settlement="{% if hex.settlement %}{{ hex.settlement.name }}{% endif %}"
                 data-settlement-id="{% if hex.settlement %}{{ hex.settlement.id }}{% endif %}"
+                data-building="{% if hex.building %}{{ hex.building.building_type }}{% endif %}"
             ></g>
         {% endfor %}
 
