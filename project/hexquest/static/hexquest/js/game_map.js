@@ -106,6 +106,24 @@ function renderHexes() {
 const SHARED_HEX_SLOT_DX = 7;
 const SHARED_HEX_SCALE = 0.65;
 
+function showDamageText(q, r, damage) {
+    const svg = document.getElementById("map");
+    if (!svg) return;
+    const pos = axialToPixel(q, r);
+
+    const text = document.createElementNS("http://www.w3.org/2000/svg", "text");
+    text.setAttribute("class", "damage-text");
+    // Small random offset so simultaneous hits on the same hex don't overlap exactly.
+    text.setAttribute("x", pos.x + (Math.random() - 0.5) * 6);
+    text.setAttribute("y", pos.y - 12);
+    text.textContent = `-${damage}`;
+    svg.appendChild(text);
+
+    const remove = () => text.remove();
+    text.addEventListener("animationend", remove);
+    setTimeout(remove, 1500); // fallback in case animationend never fires
+}
+
 function relayoutHex(q, r) {
     q = Number(q);
     r = Number(r);
@@ -215,6 +233,52 @@ function renderSingleBuilding(group) {
             grain.setAttribute("stroke-width", "0.5");
             icon.appendChild(grain);
         });
+    } else if (buildingType === "barracks") {
+        // Larger invisible hit target so the small icon stays easy to click.
+        const hitArea = document.createElementNS("http://www.w3.org/2000/svg", "circle");
+        hitArea.setAttribute("cx", 0);
+        hitArea.setAttribute("cy", 0);
+        hitArea.setAttribute("r", "9");
+        hitArea.setAttribute("fill", "transparent");
+        hitArea.style.cursor = "pointer";
+        hitArea.style.pointerEvents = "auto";
+        hitArea.addEventListener("click", (e) => {
+            e.stopPropagation();
+            selectBuilding(group);
+        });
+        icon.appendChild(hitArea);
+
+        // Shield
+        const shield = document.createElementNS("http://www.w3.org/2000/svg", "path");
+        shield.setAttribute("d", "M 0,-9 L 6,-6 L 6,2 Q 6,8 0,10 Q -6,8 -6,2 L -6,-6 Z");
+        shield.setAttribute("fill", "#78716c");
+        shield.setAttribute("stroke", "#292524");
+        shield.setAttribute("stroke-width", "1");
+        shield.style.pointerEvents = "none";
+        icon.appendChild(shield);
+
+        // Crossed spear + sword
+        const cross1 = document.createElementNS("http://www.w3.org/2000/svg", "line");
+        cross1.setAttribute("x1", -4);
+        cross1.setAttribute("y1", -5);
+        cross1.setAttribute("x2", 4);
+        cross1.setAttribute("y2", 5);
+        cross1.setAttribute("stroke", "#eab308");
+        cross1.setAttribute("stroke-width", "1.5");
+        cross1.setAttribute("stroke-linecap", "round");
+        cross1.style.pointerEvents = "none";
+        icon.appendChild(cross1);
+
+        const cross2 = document.createElementNS("http://www.w3.org/2000/svg", "line");
+        cross2.setAttribute("x1", 4);
+        cross2.setAttribute("y1", -5);
+        cross2.setAttribute("x2", -4);
+        cross2.setAttribute("y2", 5);
+        cross2.setAttribute("stroke", "#e2e8f0");
+        cross2.setAttribute("stroke-width", "1.5");
+        cross2.setAttribute("stroke-linecap", "round");
+        cross2.style.pointerEvents = "none";
+        icon.appendChild(cross2);
     }
 
     const title = document.createElementNS("http://www.w3.org/2000/svg", "title");
@@ -260,7 +324,7 @@ function renderSingleUnit(group) {
             hammerHead.style.cursor = "pointer";
             hammerHead.addEventListener("click", (e) => {
                 e.stopPropagation();
-                selectUnit(group);
+                handleUnitClick(group);
             });
             group.appendChild(hammerHead);
         }
@@ -287,9 +351,117 @@ function renderSingleUnit(group) {
         hammerHandle.setAttribute("stroke", "#8b7355");
         hammerHandle.setAttribute("stroke-width", "2");
         hammerHandle.setAttribute("stroke-linecap", "round");
+    } else if (unitType === "spearman" || unitType === "swordsman") {
+        // Clear builder/label elements if they exist
+        if (group.querySelector("rect.unit") || group.querySelector("text.unit-label")) {
+            group.innerHTML = '';
+        }
+
+        // Background circle (also the click target)
+        let circle = group.querySelector("circle.unit");
+        if (!circle) {
+            circle = document.createElementNS("http://www.w3.org/2000/svg", "circle");
+            circle.setAttribute("class", "unit");
+            circle.style.pointerEvents = "visiblePainted";
+            circle.addEventListener("click", (e) => {
+                e.stopPropagation();
+                handleUnitClick(group);
+            });
+            group.appendChild(circle);
+        }
+        circle.setAttribute("cx", 0);
+        circle.setAttribute("cy", 0);
+        circle.setAttribute("r", "8");
+        circle.setAttribute("fill", color || "#ffffff");
+        circle.setAttribute("stroke", "#020617");
+        circle.setAttribute("stroke-width", "2");
+
+        if (unitType === "spearman") {
+            // Spear: vertical shaft with a triangular tip
+            let shaft = group.querySelector("line.icon-shaft");
+            if (!shaft) {
+                shaft = document.createElementNS("http://www.w3.org/2000/svg", "line");
+                shaft.setAttribute("class", "icon-shaft");
+                shaft.style.pointerEvents = "none";
+                group.appendChild(shaft);
+            }
+            shaft.setAttribute("x1", 0);
+            shaft.setAttribute("y1", 5);
+            shaft.setAttribute("x2", 0);
+            shaft.setAttribute("y2", -5);
+            shaft.setAttribute("stroke", "#020617");
+            shaft.setAttribute("stroke-width", "1.5");
+
+            let tip = group.querySelector("polygon.icon-tip");
+            if (!tip) {
+                tip = document.createElementNS("http://www.w3.org/2000/svg", "polygon");
+                tip.setAttribute("class", "icon-tip");
+                tip.style.pointerEvents = "none";
+                group.appendChild(tip);
+            }
+            tip.setAttribute("points", "0,-7 -2.5,-3.5 2.5,-3.5");
+            tip.setAttribute("fill", "#020617");
+        } else {
+            // Sword: upright blade with a crossguard, grip, and pommel
+            let blade = group.querySelector("polygon.icon-blade");
+            if (!blade) {
+                blade = document.createElementNS("http://www.w3.org/2000/svg", "polygon");
+                blade.setAttribute("class", "icon-blade");
+                blade.style.pointerEvents = "none";
+                group.appendChild(blade);
+            }
+            blade.setAttribute("points", "0,-7 1.3,-4 1.3,1 -1.3,1 -1.3,-4");
+            blade.setAttribute("fill", "#e2e8f0");
+            blade.setAttribute("stroke", "#020617");
+            blade.setAttribute("stroke-width", "0.75");
+
+            let guard = group.querySelector("line.icon-guard");
+            if (!guard) {
+                guard = document.createElementNS("http://www.w3.org/2000/svg", "line");
+                guard.setAttribute("class", "icon-guard");
+                guard.style.pointerEvents = "none";
+                group.appendChild(guard);
+            }
+            guard.setAttribute("x1", -4);
+            guard.setAttribute("y1", 1);
+            guard.setAttribute("x2", 4);
+            guard.setAttribute("y2", 1);
+            guard.setAttribute("stroke", "#eab308");
+            guard.setAttribute("stroke-width", "1.5");
+            guard.setAttribute("stroke-linecap", "round");
+
+            let grip = group.querySelector("line.icon-grip");
+            if (!grip) {
+                grip = document.createElementNS("http://www.w3.org/2000/svg", "line");
+                grip.setAttribute("class", "icon-grip");
+                grip.style.pointerEvents = "none";
+                group.appendChild(grip);
+            }
+            grip.setAttribute("x1", 0);
+            grip.setAttribute("y1", 1);
+            grip.setAttribute("x2", 0);
+            grip.setAttribute("y2", 4.5);
+            grip.setAttribute("stroke", "#8b7355");
+            grip.setAttribute("stroke-width", "1.5");
+            grip.setAttribute("stroke-linecap", "round");
+
+            let pommel = group.querySelector("circle.icon-pommel");
+            if (!pommel) {
+                pommel = document.createElementNS("http://www.w3.org/2000/svg", "circle");
+                pommel.setAttribute("class", "icon-pommel");
+                pommel.style.pointerEvents = "none";
+                group.appendChild(pommel);
+            }
+            pommel.setAttribute("cx", 0);
+            pommel.setAttribute("cy", 5);
+            pommel.setAttribute("r", "1");
+            pommel.setAttribute("fill", "#eab308");
+            pommel.setAttribute("stroke", "#713f12");
+            pommel.setAttribute("stroke-width", "0.5");
+        }
     } else {
-        // Clear builder elements if they exist
-        if (group.querySelector("rect.unit")) {
+        // Clear builder/icon elements if they exist
+        if (group.querySelector("rect.unit") || group.querySelector(".icon-shaft, .icon-blade")) {
             group.innerHTML = '';
         }
 
@@ -301,7 +473,7 @@ function renderSingleUnit(group) {
             circle.style.pointerEvents = "visiblePainted";
             circle.addEventListener("click", (e) => {
                 e.stopPropagation();
-                selectUnit(group);
+                handleUnitClick(group);
             });
             group.appendChild(circle);
         }
@@ -547,8 +719,110 @@ async function upgradeSettlement(settlementId) {
     }
 }
 
+function selectBuilding(hexGroup) {
+    const actionMenu = document.getElementById("action-menu");
+    const unitInfo = document.getElementById("unit-info");
+    const actionButtons = document.getElementById("action-buttons");
+
+    if (selectedUnit === hexGroup) {
+        closeActionMenu();
+        return;
+    }
+
+    selectedUnit = hexGroup;
+    clearHighlights();
+
+    const buildingId = hexGroup.dataset.buildingId;
+    const buildingType = hexGroup.dataset.building;
+    const q = Number(hexGroup.dataset.q);
+    const r = Number(hexGroup.dataset.r);
+    const ownerId = Number(hexGroup.dataset.ownerId);
+    const isQueued = hexGroup.dataset.buildingQueued === "true";
+
+    unitInfo.textContent = formatBuildingLabel(buildingType);
+    actionButtons.innerHTML = "";
+
+    if (ownerId === currentUserId && isMyTurn) {
+        if (isQueued) {
+            const msg = document.createElement("p");
+            msg.textContent = "Action queued for end of turn.";
+            msg.style.color = "#8b5cf6";
+            msg.style.fontSize = "0.875rem";
+            actionButtons.appendChild(msg);
+        } else if (buildingType === "barracks") {
+            Object.keys(unitRecruitCosts).forEach((unitType) => {
+                const cost = unitRecruitCosts[unitType];
+                const recruitBtn = document.createElement("button");
+                recruitBtn.textContent = `Recruit ${formatBuildingLabel(unitType)} 💰${cost}`;
+                recruitBtn.onclick = () => performRecruit(buildingId, unitType);
+                actionButtons.appendChild(recruitBtn);
+            });
+        }
+    }
+
+    const pos = axialToPixel(q, r);
+    actionMenu.style.display = "block";
+
+    if (!isMenuDragged) {
+        // Position menu and ensure it's within map bounds
+        const menuWidth = actionMenu.offsetWidth || 200;
+        const menuHeight = actionMenu.offsetHeight || 100;
+
+        let left = (pos.x * scale) + 20;
+        let top = (pos.y * scale) - 20;
+
+        // Basic bounds check against SVG size
+        const svg = document.getElementById('map');
+        const svgWidth = svg.width.baseVal.value * scale;
+        const svgHeight = svg.height.baseVal.value * scale;
+
+        if (left + menuWidth > svgWidth) left = (pos.x * scale) - menuWidth - 20;
+        if (top + menuHeight > svgHeight) top = svgHeight - menuHeight - 10;
+        if (top < 0) top = 10;
+        if (left < 0) left = 10;
+
+        actionMenu.style.left = `${left}px`;
+        actionMenu.style.top = `${top}px`;
+    }
+}
+
+async function performRecruit(buildingId, unitType) {
+    const formData = new FormData();
+    formData.append("unit_type", unitType);
+    formData.append("csrfmiddlewaretoken", csrfToken);
+
+    try {
+        const response = await fetch(`/games/${gameId}/building/${buildingId}/recruit/`, {
+            method: "POST",
+            body: formData
+        });
+        const data = await response.json();
+        if (data.status === "ok" || data.status === "queued") {
+            closeActionMenu();
+        } else {
+            alert(data.error);
+        }
+    } catch (err) {
+        console.error(err);
+    }
+}
+
 let selectedUnit = null;
 let isMenuDragged = false;
+
+// While an Attack order is being targeted, clicking a highlighted enemy
+// unit's icon should queue the attack instead of selecting that unit (its
+// icon renders on top of the hex and would otherwise intercept the click).
+let activeAttackSourceId = null;
+let activeAttackTargetIds = new Set();
+
+function handleUnitClick(group) {
+    if (activeAttackSourceId && activeAttackTargetIds.has(group.dataset.id)) {
+        performAttack(activeAttackSourceId, group.dataset.id);
+        return;
+    }
+    selectUnit(group);
+}
 
 function selectUnit(unitGroup) {
     const actionMenu = document.getElementById("action-menu");
@@ -572,10 +846,15 @@ function selectUnit(unitGroup) {
     const ownerNation = unitGroup.dataset.ownerNation;
     const lastActionTurn = Number(unitGroup.dataset.lastActionTurn);
     const isQueued = unitGroup.dataset.queuedAction === "true";
+    const hitpoints = unitGroup.dataset.hitpoints;
+    const maxHitpoints = unitGroup.dataset.maxHitpoints;
+    const attack = unitGroup.dataset.attack;
+    const defense = unitGroup.dataset.defense;
 
+    const statsText = `${hitpoints}/${maxHitpoints} HP ⚔${attack} 🛡${defense}`;
     unitInfo.textContent = ownerId === currentUserId
-        ? type
-        : `${type} — ${ownerNation} (${ownerName})`;
+        ? `${type} — ${statsText}`
+        : `${type} — ${ownerNation} (${ownerName}) — ${statsText}`;
     actionButtons.innerHTML = "";
 
     if (ownerId === currentUserId && isMyTurn) {
@@ -641,6 +920,14 @@ function showUnitActions(id, type, container) {
             container.appendChild(buildBtn);
         });
     }
+
+    // Attack Action
+    if (type === "spearman" || type === "swordsman") {
+        const attackBtn = document.createElement("button");
+        attackBtn.textContent = "Attack";
+        attackBtn.onclick = () => showAttackTargets(selectedUnit);
+        container.appendChild(attackBtn);
+    }
 }
 
 function showMoveTargets(unitGroup) {
@@ -664,6 +951,39 @@ function showMoveTargets(unitGroup) {
             }
         }
     });
+}
+
+function showAttackTargets(unitGroup) {
+    clearHighlights();
+    const q = Number(unitGroup.dataset.q);
+    const r = Number(unitGroup.dataset.r);
+    const unitId = unitGroup.dataset.id;
+
+    const neighbors = [
+        [1, 0], [1, -1], [0, -1], [-1, 0], [-1, 1], [0, 1]
+    ];
+
+    neighbors.forEach(([dq, dr]) => {
+        const targetQ = q + dq;
+        const targetR = r + dr;
+        const hex = document.querySelector(`.hex-group[data-q="${targetQ}"][data-r="${targetR}"] .hex`);
+        if (!hex) return;
+
+        const enemyUnit = document.querySelector(
+            `.unit-group[data-q="${targetQ}"][data-r="${targetR}"]:not([data-owner-id="${currentUserId}"])`
+        );
+        if (enemyUnit) {
+            // The enemy unit's own icon renders on top of the hex, so it
+            // intercepts clicks before the hex's own onclick ever fires.
+            // Track it as a valid attack target so handleUnitClick can
+            // redirect the click into an attack instead of a selection.
+            hex.classList.add("highlight-attack");
+            hex.onclick = () => performAttack(unitId, enemyUnit.dataset.id);
+            activeAttackTargetIds.add(enemyUnit.dataset.id);
+        }
+    });
+
+    activeAttackSourceId = activeAttackTargetIds.size > 0 ? unitId : null;
 }
 
 function showExpandTargets(settlementGroup) {
@@ -729,10 +1049,33 @@ async function performExpand(settlementId, q, r) {
 }
 
 function clearHighlights() {
-    document.querySelectorAll(".hex.highlight-move").forEach(hex => {
-        hex.classList.remove("highlight-move");
+    document.querySelectorAll(".hex.highlight-move, .hex.highlight-attack").forEach(hex => {
+        hex.classList.remove("highlight-move", "highlight-attack");
         hex.onclick = null;
     });
+    activeAttackSourceId = null;
+    activeAttackTargetIds = new Set();
+}
+
+async function performAttack(unitId, targetId) {
+    const formData = new FormData();
+    formData.append("target_id", targetId);
+    formData.append("csrfmiddlewaretoken", csrfToken);
+
+    try {
+        const response = await fetch(`/games/${gameId}/unit/${unitId}/attack/`, {
+            method: "POST",
+            body: formData
+        });
+        const data = await response.json();
+        if (data.status === "ok" || data.status === "queued") {
+            closeActionMenu();
+        } else {
+            alert(data.error);
+        }
+    } catch (err) {
+        console.error(err);
+    }
 }
 
 async function performMove(unitId, q, r) {
@@ -927,6 +1270,10 @@ document.addEventListener('DOMContentLoaded', () => {
             group.dataset.label = u.label;
             group.dataset.lastActionTurn = u.last_action_turn;
             group.dataset.queuedAction = u.queued_action;
+            group.dataset.hitpoints = u.hitpoints;
+            group.dataset.maxHitpoints = u.max_hitpoints;
+            group.dataset.attack = u.attack;
+            group.dataset.defense = u.defense;
 
             const newKey = `${u.q},${u.r}`;
             if (oldKey && oldKey !== newKey) affectedHexes.add(oldKey);
@@ -989,6 +1336,8 @@ document.addEventListener('DOMContentLoaded', () => {
                 group.dataset.settlement = h.settlement || "";
                 group.dataset.settlementId = h.settlement_id || "";
                 group.dataset.building = h.building || "";
+                group.dataset.buildingId = h.building_id || "";
+                group.dataset.buildingQueued = h.building_queued ? "true" : "false";
                 renderSingleBuilding(group);
 
                 // Update the polygon stroke
@@ -1046,6 +1395,11 @@ document.addEventListener('DOMContentLoaded', () => {
         if (data.hexes) updateHexes(data.hexes);
         if (data.settlements) updateSettlements(data.settlements);
         if (data.units) updateUnits(data.units);
+
+        // Floating damage numbers for any combat resolved this turn
+        if (data.combat_events) {
+            data.combat_events.forEach(ev => showDamageText(ev.q, ev.r, ev.damage));
+        }
 
         // Update queued actions list (handled by HTMX now)
     }

@@ -126,11 +126,12 @@ def broadcast_setup_abandoned(game_id):
     _dispatch_async(_do_send)
 
 
-def _building_type(hex_tile):
+def _building_info(hex_tile):
     try:
-        return hex_tile.building.building_type
+        b = hex_tile.building
     except Building.DoesNotExist:
         return None
+    return {"type": b.building_type, "id": b.id, "queued": bool(b.queued_action)}
 
 
 def _get_active_nation(game):
@@ -141,7 +142,7 @@ def _get_active_nation(game):
     return game.nations.order_by("id").first()
 
 
-def _serialize_game_update(game, nation, all_units=None, all_settlements=None, all_hexes=None):
+def _serialize_game_update(game, nation, all_units=None, all_settlements=None, all_hexes=None, all_buildings=None, combat_events=None):
     from django.utils import timezone
     remaining_time = int((game.turn_end_time - timezone.now()).total_seconds()) if game.turn_end_time else 0
     active_nation = _get_active_nation(game)
@@ -152,6 +153,24 @@ def _serialize_game_update(game, nation, all_units=None, all_settlements=None, a
         all_settlements = list(Settlement.objects.filter(game=game).select_related("nation__player").all())
     if all_hexes is None:
         all_hexes = list(HexTile.objects.filter(game=game).select_related("owner__player", "settlement", "building").all())
+    if all_buildings is None:
+        all_buildings = list(Building.objects.filter(game=game).select_related("hex_tile__owner__player"))
+
+    hexes_payload = []
+    for h in all_hexes:
+        info = _building_info(h)
+        hexes_payload.append({
+            "q": h.q,
+            "r": h.r,
+            "owner": h.owner.name if h.owner else None,
+            "owner_id": h.owner.player.id if h.owner else None,
+            "owner_color": h.owner.color if h.owner else None,
+            "settlement": h.settlement.name if h.settlement else None,
+            "settlement_id": h.settlement.id if h.settlement else None,
+            "building": info["type"] if info else None,
+            "building_id": info["id"] if info else None,
+            "building_queued": info["queued"] if info else False,
+        })
 
     return {
         "is_finished": game.is_finished,
@@ -176,7 +195,11 @@ def _serialize_game_update(game, nation, all_units=None, all_settlements=None, a
                 "owner_name": u.nation.player.username,
                 "owner_nation": u.nation.name,
                 "last_action_turn": u.last_action_turn,
-                "queued_action": bool(u.queued_action)
+                "queued_action": bool(u.queued_action),
+                "hitpoints": u.hitpoints,
+                "max_hitpoints": u.max_hitpoints,
+                "attack": u.attack,
+                "defense": u.defense,
             } for u in all_units
         ],
         "settlements": [
@@ -195,18 +218,7 @@ def _serialize_game_update(game, nation, all_units=None, all_settlements=None, a
                 "queued_action": bool(s.queued_action)
             } for s in all_settlements
         ],
-        "hexes": [
-            {
-                "q": h.q,
-                "r": h.r,
-                "owner": h.owner.name if h.owner else None,
-                "owner_id": h.owner.player.id if h.owner else None,
-                "owner_color": h.owner.color if h.owner else None,
-                "settlement": h.settlement.name if h.settlement else None,
-                "settlement_id": h.settlement.id if h.settlement else None,
-                "building": _building_type(h)
-            } for h in all_hexes
-        ],
+        "hexes": hexes_payload,
         "queued_actions": [
             {
                 "id": u.id,
@@ -225,11 +237,21 @@ def _serialize_game_update(game, nation, all_units=None, all_settlements=None, a
                 "q": s.q,
                 "r": s.r
             } for s in all_settlements if s.nation_id == nation.id and s.queued_action
-        ]
+        ] + [
+            {
+                "id": b.id,
+                "type": "building",
+                "building_type": b.building_type,
+                "action": b.queued_action,
+                "q": b.hex_tile.q,
+                "r": b.hex_tile.r,
+            } for b in all_buildings if b.hex_tile.owner_id == nation.id and b.queued_action
+        ],
+        "combat_events": combat_events or [],
     }
 
 
-def broadcast_game_update(game, user=None):
+def broadcast_game_update(game, user=None, combat_events=None):
     """
     Broadcast game updates. If user is provided, only sends to that user's group.
     Otherwise, sends to all players in the game (looping through their nations).
@@ -243,18 +265,19 @@ def broadcast_game_update(game, user=None):
     all_units = list(Unit.objects.filter(game=game).select_related("nation__player").all())
     all_settlements = list(Settlement.objects.filter(game=game).select_related("nation__player").all())
     all_hexes = list(HexTile.objects.filter(game=game).select_related("owner__player", "settlement", "building").all())
+    all_buildings = list(Building.objects.filter(game=game).select_related("hex_tile__owner__player"))
 
     broadcasts = []
     if user:
         try:
             nation = game.nations.get(player=user)
-            payload = _serialize_game_update(game, nation, all_units, all_settlements, all_hexes)
+            payload = _serialize_game_update(game, nation, all_units, all_settlements, all_hexes, all_buildings, combat_events)
             broadcasts.append((_user_game_group(game.id, user.id), payload))
         except Exception:
             pass
     else:
         for nation in game.nations.select_related("player").all():
-            payload = _serialize_game_update(game, nation, all_units, all_settlements, all_hexes)
+            payload = _serialize_game_update(game, nation, all_units, all_settlements, all_hexes, all_buildings, combat_events)
             broadcasts.append((_user_game_group(game.id, nation.player.id), payload))
 
     if not broadcasts:

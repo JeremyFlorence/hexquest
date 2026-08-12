@@ -4,6 +4,8 @@
             <span class="action-title">
                 {% if action.type == "unit" %}
                     {{ action.unit_type|title }}
+                {% elif action.type == "building" %}
+                    {{ action.building_type|title }}
                 {% else %}
                     {{ action.name }}
                 {% endif %}
@@ -20,6 +22,10 @@
                     Expand to ({{ action.action.q }}, {{ action.action.r }})
                 {% elif action.action.type == "build" %}
                     Build {{ action.action.building_type|title }}
+                {% elif action.action.type == "attack" %}
+                    Attack enemy unit
+                {% elif action.action.type == "recruit" %}
+                    Recruit {{ action.action.unit_type|title }}
                 {% endif %}
             </span>
             <button class="cancel-action-btn" 

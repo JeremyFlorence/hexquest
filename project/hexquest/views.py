@@ -257,6 +257,15 @@ def _get_queued_actions(nation):
             "q": s.q,
             "r": s.r
         } for s in nation.settlements.exclude(queued_action__isnull=True)
+    ] + [
+        {
+            "id": b.id,
+            "type": "building",
+            "building_type": b.building_type,
+            "action": b.queued_action,
+            "q": b.hex_tile.q,
+            "r": b.hex_tile.r,
+        } for b in Building.objects.filter(hex_tile__owner=nation).exclude(queued_action__isnull=True).select_related("hex_tile")
     ]
 
 
@@ -337,6 +346,7 @@ def game_map(request, game_id):
             "queued_actions": _get_queued_actions(nation),
             "chat_messages": chat_messages,
             "building_costs_json": json.dumps(Building.BUILDING_COSTS),
+            "unit_recruit_costs_json": json.dumps(Unit.RECRUIT_COSTS),
         },
     )
 
@@ -369,6 +379,10 @@ def process_turn_end(game):
         # same destination in the same turn.
         occupancy = Counter(game.units.values_list("q", "r"))
 
+        # Damage dealt this turn, so the frontend can render floating combat
+        # text above the affected units.
+        combat_events = []
+
         # Process queued actions for the active nation's units only - other
         # nations can't have queued actions since only the active nation may
         # act during its turn.
@@ -385,7 +399,8 @@ def process_turn_end(game):
                     if target_tile and target_tile.terrain != "water":
                         old_pos = (unit.q, unit.r)
                         new_pos = (q, r)
-                        if new_pos == old_pos or occupancy[new_pos] < _hex_unit_capacity(target_tile):
+                        enemy_present = Unit.objects.filter(game=game, q=q, r=r).exclude(nation=unit.nation).exists()
+                        if not enemy_present and (new_pos == old_pos or occupancy[new_pos] < _hex_unit_capacity(target_tile)):
                             occupancy[old_pos] -= 1
                             occupancy[new_pos] += 1
                             unit.q = q
@@ -438,7 +453,9 @@ def process_turn_end(game):
             elif action['type'] == 'build':
                 building_type = action['building_type']
                 tile = HexTile.objects.filter(game=game, q=unit.q, r=unit.r).first()
-                if tile and unit.unit_type == 'builder' and tile.owner == unit.nation and tile.terrain == "plains":
+                allowed_terrain = Building.BUILDING_TERRAIN.get(building_type)
+                terrain_ok = tile and tile.terrain != "water" and (not allowed_terrain or tile.terrain in allowed_terrain)
+                if tile and unit.unit_type == 'builder' and tile.owner == unit.nation and terrain_ok:
                     if not hasattr(tile, 'building') or not tile.building:
                         cost = Building.BUILDING_COSTS.get(building_type, 0)
                         if unit.nation.gold >= cost:
@@ -451,7 +468,74 @@ def process_turn_end(game):
                             )
                             unit.last_action_turn = game.current_turn
 
+            elif action['type'] == 'attack':
+                target = Unit.objects.filter(game=game, id=action['target_id']).first()
+                if target and target.nation_id != unit.nation_id and hex_distance(unit.q, unit.r, target.q, target.r) == 1:
+                    unit.last_action_turn = game.current_turn
+                    target.hitpoints -= unit.attack
+                    combat_events.append({"q": target.q, "r": target.r, "damage": unit.attack})
+                    if target.hitpoints <= 0:
+                        occupancy[(target.q, target.r)] -= 1
+                        target.delete()
+                    else:
+                        unit.hitpoints -= target.defense
+                        combat_events.append({"q": unit.q, "r": unit.r, "damage": target.defense})
+                        target.save()
+                    if unit.hitpoints <= 0:
+                        occupancy[(unit.q, unit.r)] -= 1
+                        unit.delete()
+                        continue  # Attacker died, don't save it below
+
             unit.save()
+
+        # Process queued actions for the active nation's buildings (e.g.
+        # barracks recruiting a new unit) only
+        buildings_with_queued = list(
+            Building.objects.filter(game=game, hex_tile__owner=active_nation)
+            .exclude(queued_action__isnull=True)
+            .select_related("hex_tile")
+        )
+        for building in buildings_with_queued:
+            activity_occurred = True
+            action = building.queued_action
+            building.queued_action = None
+
+            if action['type'] == 'recruit':
+                unit_type = action['unit_type']
+                cost = Unit.RECRUIT_COSTS.get(unit_type, 0)
+                nation = active_nation
+                if nation.gold >= cost:
+                    spawn_tile = building.hex_tile
+                    target_tile = None
+                    if occupancy[(spawn_tile.q, spawn_tile.r)] < _hex_unit_capacity(spawn_tile):
+                        target_tile = spawn_tile
+                    else:
+                        from project.hexgrid import hex_neighbors
+                        for n_q, n_r in hex_neighbors(spawn_tile.q, spawn_tile.r):
+                            adj_tile = HexTile.objects.filter(game=game, q=n_q, r=n_r).select_related("settlement", "building").first()
+                            if (adj_tile and adj_tile.owner_id == nation.id and adj_tile.terrain != "water"
+                                    and occupancy[(n_q, n_r)] < _hex_unit_capacity(adj_tile)):
+                                target_tile = adj_tile
+                                break
+
+                    if target_tile:
+                        nation.gold -= cost
+                        nation.save()
+                        stats = Unit.stats_for(unit_type)
+                        Unit.objects.create(
+                            game=game,
+                            nation=nation,
+                            q=target_tile.q,
+                            r=target_tile.r,
+                            unit_type=unit_type,
+                            hitpoints=stats["hitpoints"],
+                            attack=stats["attack"],
+                            defense=stats["defense"],
+                            last_action_turn=game.current_turn,
+                        )
+                        occupancy[(target_tile.q, target_tile.r)] += 1
+
+            building.save()
 
         # Process queued actions for the active nation's settlements only
         settlements_with_queued = list(active_nation.settlements.exclude(queued_action__isnull=True))
@@ -494,8 +578,10 @@ def process_turn_end(game):
         if activity_occurred:
             game.round_activity_occurred = True
 
-        active_nation.has_ended_turn = False
-        active_nation.save()
+        # Update only this field (rather than active_nation.save()) so we
+        # don't clobber gold/food changes made above via separately-fetched
+        # instances of the same nation row (e.g. unit.nation, settlement.nation).
+        Nation.objects.filter(id=active_nation.id).update(has_ended_turn=False)
 
         # Determine who goes next, rotating through nations in join order.
         # Wrapping back around to the first nation means a full round (every
@@ -540,7 +626,7 @@ def process_turn_end(game):
             game.active_nation = next_nation
         game.save()
 
-        broadcast_game_update(game)
+        broadcast_game_update(game, combat_events=combat_events)
 
 
 @login_required
@@ -576,25 +662,7 @@ def game_updates(request, game_id):
         "gold": nation.gold,
         "food": nation.food,
         "unit_count": nation.units.count(),
-        "queued_actions": [
-            {
-                "id": u.id,
-                "type": "unit",
-                "unit_type": u.unit_type,
-                "action": u.queued_action,
-                "q": u.q,
-                "r": u.r
-            } for u in nation.units.exclude(queued_action__isnull=True)
-        ] + [
-            {
-                "id": s.id,
-                "type": "settlement",
-                "name": s.name,
-                "action": s.queued_action,
-                "q": s.q,
-                "r": s.r
-            } for s in nation.settlements.exclude(queued_action__isnull=True)
-        ]
+        "queued_actions": _get_queued_actions(nation),
     })
 
 
@@ -705,11 +773,49 @@ def unit_move(request, game_id, unit_id):
     # Check hex capacity (this is an early check for immediate feedback;
     # process_turn_end re-validates authoritatively since other units may
     # also queue a move onto the same hex this turn).
-    occupants = Unit.objects.filter(game_id=game_id, q=q, r=r).exclude(id=unit.id).count()
-    if occupants >= _hex_unit_capacity(target_tile):
+    occupants = Unit.objects.filter(game_id=game_id, q=q, r=r).exclude(id=unit.id)
+    if occupants.exclude(nation=unit.nation).exists():
+        return JsonResponse({"error": "Destination hex is occupied by an enemy unit. Attack it instead."}, status=400)
+    if occupants.count() >= _hex_unit_capacity(target_tile):
         return JsonResponse({"error": "Destination hex is full"}, status=400)
 
     unit.queued_action = {"type": "move", "q": q, "r": r}
+    unit.save()
+    broadcast_game_update(unit.game, user=request.user)
+    return JsonResponse({"status": "queued", "message": "Action queued for next turn"})
+
+
+@login_required
+def unit_attack(request, game_id, unit_id):
+    if request.method != "POST":
+        return JsonResponse({"error": "Method not allowed"}, status=405)
+
+    unit = get_object_or_404(Unit, id=unit_id, game_id=game_id)
+    if unit.nation.player != request.user:
+        return HttpResponseForbidden("You do not own this unit")
+
+    if _get_active_nation(unit.game) != unit.nation:
+        return JsonResponse({"error": "It is not your turn"}, status=400)
+
+    if unit.queued_action:
+        return JsonResponse({"error": "This unit has already acted this turn"}, status=400)
+
+    if unit.unit_type not in Unit.COMBAT_UNIT_TYPES:
+        return JsonResponse({"error": "Only combat units can attack"}, status=400)
+
+    try:
+        target_id = int(request.POST.get("target_id"))
+    except (TypeError, ValueError):
+        return JsonResponse({"error": "Invalid target"}, status=400)
+
+    target = get_object_or_404(Unit, id=target_id, game_id=game_id)
+    if target.nation_id == unit.nation_id:
+        return JsonResponse({"error": "Cannot attack your own unit"}, status=400)
+
+    if hex_distance(unit.q, unit.r, target.q, target.r) != 1:
+        return JsonResponse({"error": "Target is not adjacent"}, status=400)
+
+    unit.queued_action = {"type": "attack", "target_id": target.id}
     unit.save()
     broadcast_game_update(unit.game, user=request.user)
     return JsonResponse({"status": "queued", "message": "Action queued for next turn"})
@@ -888,7 +994,7 @@ def builder_build(request, game_id, unit_id):
         return JsonResponse({"error": "Only builders can build structures"}, status=400)
 
     building_type = request.POST.get("type")
-    if building_type != "wheat_farm":
+    if building_type not in Building.BUILDING_COSTS:
         return JsonResponse({"error": "Unknown building type"}, status=400)
 
     tile = HexTile.objects.filter(game_id=game_id, q=unit.q, r=unit.r).first()
@@ -898,8 +1004,9 @@ def builder_build(request, game_id, unit_id):
     if tile.owner != unit.nation:
         return JsonResponse({"error": "You do not own this tile"}, status=400)
 
-    if tile.terrain != "plains":
-        return JsonResponse({"error": "Wheat farms can only be built on plains"}, status=400)
+    allowed_terrain = Building.BUILDING_TERRAIN.get(building_type)
+    if tile.terrain == "water" or (allowed_terrain and tile.terrain not in allowed_terrain):
+        return JsonResponse({"error": f"{building_type.replace('_', ' ').title()} cannot be built here"}, status=400)
 
     if hasattr(tile, 'building') and tile.building:
         return JsonResponse({"error": "A building already exists on this tile"}, status=400)
@@ -911,6 +1018,39 @@ def builder_build(request, game_id, unit_id):
     unit.queued_action = {"type": "build", "building_type": building_type}
     unit.save()
     broadcast_game_update(unit.game, user=request.user)
+    return JsonResponse({"status": "queued", "message": "Action queued for next turn"})
+
+
+@login_required
+def barracks_recruit(request, game_id, building_id):
+    if request.method != "POST":
+        return JsonResponse({"error": "Method not allowed"}, status=405)
+
+    building = get_object_or_404(Building, id=building_id, game_id=game_id)
+    nation = building.hex_tile.owner
+    if not nation or nation.player != request.user:
+        return HttpResponseForbidden("You do not own this building")
+
+    if _get_active_nation(building.game) != nation:
+        return JsonResponse({"error": "It is not your turn"}, status=400)
+
+    if building.building_type != "barracks":
+        return JsonResponse({"error": "Only barracks can recruit units"}, status=400)
+
+    if building.queued_action:
+        return JsonResponse({"error": "This building has already acted this turn"}, status=400)
+
+    unit_type = request.POST.get("unit_type")
+    if unit_type not in Unit.RECRUIT_COSTS:
+        return JsonResponse({"error": "Unknown unit type"}, status=400)
+
+    cost = Unit.RECRUIT_COSTS[unit_type]
+    if nation.gold < cost:
+        return JsonResponse({"error": f"Not enough gold. Need {cost}"}, status=400)
+
+    building.queued_action = {"type": "recruit", "unit_type": unit_type}
+    building.save()
+    broadcast_game_update(building.game, user=request.user)
     return JsonResponse({"status": "queued", "message": "Action queued for next turn"})
 
 
@@ -932,15 +1072,20 @@ def cancel_action(request, game_id):
 
     if object_type == "unit":
         obj = get_object_or_404(Unit, id=object_id, game_id=game_id)
+        nation = obj.nation
     elif object_type == "settlement":
         obj = get_object_or_404(Settlement, id=object_id, game_id=game_id)
+        nation = obj.nation
+    elif object_type == "building":
+        obj = get_object_or_404(Building, id=object_id, game_id=game_id)
+        nation = obj.hex_tile.owner
     else:
         return JsonResponse({"error": "Invalid object type"}, status=400)
 
-    if obj.nation.player != request.user:
+    if not nation or nation.player != request.user:
         return HttpResponseForbidden("You do not own this")
 
-    if _get_active_nation(obj.game) != obj.nation:
+    if _get_active_nation(obj.game) != nation:
         return JsonResponse({"error": "It is not your turn"}, status=400)
 
     obj.queued_action = None

@@ -43,6 +43,7 @@
     const chatWsUrl = wsScheme + window.location.host + `/ws/chat/${gameId}/`;
     const currentUsername = "{{ request.user.username }}";
     const buildingCosts = {{ building_costs_json|safe }};
+    const unitRecruitCosts = {{ unit_recruit_costs_json|safe }};
     let currentTurn = {{ game.current_turn }};
     let remainingTime = {{ remaining_time }};
     let isMyTurn = {% if is_my_turn %}true{% else %}false{% endif %};
@@ -68,6 +69,8 @@
                 data-settlement="{% if hex.settlement %}{{ hex.settlement.name }}{% endif %}"
                 data-settlement-id="{% if hex.settlement %}{{ hex.settlement.id }}{% endif %}"
                 data-building="{% if hex.building %}{{ hex.building.building_type }}{% endif %}"
+                data-building-id="{% if hex.building %}{{ hex.building.id }}{% endif %}"
+                data-building-queued="{% if hex.building.queued_action %}true{% else %}false{% endif %}"
             ></g>
         {% endfor %}
 
@@ -86,6 +89,10 @@
                 data-last-action-turn="{{ unit.last_action_turn }}"
                 data-queued-action="{% if unit.queued_action %}true{% else %}false{% endif %}"
                 data-label="{{ unit.unit_type|slice:':1'|upper }}"
+                data-hitpoints="{{ unit.hitpoints }}"
+                data-max-hitpoints="{{ unit.max_hitpoints }}"
+                data-attack="{{ unit.attack }}"
+                data-defense="{{ unit.defense }}"
             ></g>
         {% endfor %}
 

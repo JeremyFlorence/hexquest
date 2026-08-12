@@ -98,11 +98,15 @@ def generate_world(game, width, height, seed):
             nation.save()
             
             # Create starting settler units
+            stats = Unit.stats_for("settler")
             for _ in range(game.starting_settlers):
                 Unit.objects.create(
                     game=game,
                     nation=nation,
                     q=start_tile.q,
                     r=start_tile.r,
-                    unit_type="settler"
+                    unit_type="settler",
+                    hitpoints=stats["hitpoints"],
+                    attack=stats["attack"],
+                    defense=stats["defense"],
                 )

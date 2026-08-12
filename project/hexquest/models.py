@@ -96,7 +96,27 @@ class Unit(models.Model):
         ("cavalry", "Cavalry"),
         ("settler", "Settler"),
         ("builder", "Builder"),
+        ("spearman", "Spearman"),
+        ("swordsman", "Swordsman"),
     ]
+
+    # Base combat/survival stats assigned to a unit when it's created.
+    UNIT_STATS = {
+        "settler": {"hitpoints": 100, "attack": 1, "defense": 1},
+        "builder": {"hitpoints": 100, "attack": 1, "defense": 1},
+        "infantry": {"hitpoints": 100, "attack": 1, "defense": 1},
+        "cavalry": {"hitpoints": 100, "attack": 1, "defense": 1},
+        "spearman": {"hitpoints": 1000, "attack": 8, "defense": 10},
+        "swordsman": {"hitpoints": 1000, "attack": 10, "defense": 8},
+    }
+
+    # Combat units that can be trained at a Barracks and issue an Attack order.
+    COMBAT_UNIT_TYPES = {"spearman", "swordsman"}
+
+    RECRUIT_COSTS = {
+        "spearman": 20,
+        "swordsman": 20,
+    }
 
     game = models.ForeignKey(Game, on_delete=models.CASCADE, related_name="units")
     nation = models.ForeignKey(Nation, on_delete=models.CASCADE, related_name="units")
@@ -105,8 +125,19 @@ class Unit(models.Model):
     unit_type = models.CharField(max_length=20, choices=UNIT_TYPES)
     strength = models.IntegerField(default=10)
     movement = models.IntegerField(default=2)
+    hitpoints = models.IntegerField(default=100)
+    attack = models.IntegerField(default=1)
+    defense = models.IntegerField(default=1)
     last_action_turn = models.PositiveIntegerField(default=0)
     queued_action = models.JSONField(null=True, blank=True)
+
+    @classmethod
+    def stats_for(cls, unit_type):
+        return cls.UNIT_STATS.get(unit_type, {"hitpoints": 100, "attack": 1, "defense": 1})
+
+    @property
+    def max_hitpoints(self):
+        return self.stats_for(self.unit_type)["hitpoints"]
 
     def __str__(self):
         return f"{self.get_unit_type_display()} - {self.nation.name} ({self.q}, {self.r})"
@@ -171,15 +202,24 @@ class Notification(models.Model):
 class Building(models.Model):
     BUILDING_TYPES = [
         ("wheat_farm", "Wheat Farm"),
+        ("barracks", "Barracks"),
     ]
 
     BUILDING_COSTS = {
         "wheat_farm": 10,
+        "barracks": 15,
+    }
+
+    # Terrain a building type may be constructed on; omitted types allow any
+    # non-water tile.
+    BUILDING_TERRAIN = {
+        "wheat_farm": {"plains"},
     }
 
     game = models.ForeignKey(Game, on_delete=models.CASCADE, related_name="buildings")
     hex_tile = models.OneToOneField(HexTile, on_delete=models.CASCADE, related_name="building")
     building_type = models.CharField(max_length=20, choices=BUILDING_TYPES)
+    queued_action = models.JSONField(null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
 
     def __str__(self):
