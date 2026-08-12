@@ -8,6 +8,16 @@ class Game(models.Model):
     current_turn = models.PositiveIntegerField(default=1)
     turn_timer = models.PositiveIntegerField(default=120)  # in seconds
     turn_end_time = models.DateTimeField(null=True, blank=True)
+    active_nation = models.ForeignKey(
+        "Nation",
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="+",
+    )
+    # Tracks whether any nation has acted during the current round (one pass
+    # through all players), used to detect inactive games across rounds.
+    round_activity_occurred = models.BooleanField(default=False)
     width = models.PositiveIntegerField()
     height = models.PositiveIntegerField()
     seed = models.CharField(max_length=64)

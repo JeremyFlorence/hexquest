@@ -45,7 +45,7 @@
     const buildingCosts = {{ building_costs_json|safe }};
     let currentTurn = {{ game.current_turn }};
     let remainingTime = {{ remaining_time }};
-    let hasEndedTurn = {% if nation.has_ended_turn %}true{% else %}false{% endif %};
+    let isMyTurn = {% if is_my_turn %}true{% else %}false{% endif %};
 </script>
 
 <div class="game-container">
@@ -81,6 +81,8 @@
                 data-r="{{ unit.r }}"
                 data-color="{{ unit.nation.color }}"
                 data-owner-id="{{ unit.nation.player.id }}"
+                data-owner-name="{{ unit.nation.player.username }}"
+                data-owner-nation="{{ unit.nation.name }}"
                 data-last-action-turn="{{ unit.last_action_turn }}"
                 data-queued-action="{% if unit.queued_action %}true{% else %}false{% endif %}"
                 data-label="{{ unit.unit_type|slice:':1'|upper }}"
@@ -100,6 +102,8 @@
                 data-last-action-turn="{{ settlement.last_action_turn }}"
                 data-queued-action="{% if settlement.queued_action %}true{% else %}false{% endif %}"
                 data-owner-id="{{ settlement.nation.player.id }}"
+                data-owner-name="{{ settlement.nation.player.username }}"
+                data-owner-nation="{{ settlement.nation.name }}"
             ></g>
         {% endfor %}
     </svg>

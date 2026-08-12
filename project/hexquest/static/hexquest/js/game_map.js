@@ -440,13 +440,17 @@ function selectSettlement(group) {
     const tier = group.dataset.tier;
     const population = Number(group.dataset.population);
     const ownerId = Number(group.dataset.ownerId);
+    const ownerName = group.dataset.ownerName;
+    const ownerNation = group.dataset.ownerNation;
     const lastActionTurn = Number(group.dataset.lastActionTurn);
     const isQueued = group.dataset.queuedAction === "true";
 
-    unitInfo.textContent = `${name} (${tier})`;
+    unitInfo.textContent = ownerId === currentUserId
+        ? `${name} (${tier})`
+        : `${name} (${tier}) — ${ownerNation} (${ownerName})`;
     actionButtons.innerHTML = "";
 
-    if (ownerId === currentUserId && !hasEndedTurn) {
+    if (ownerId === currentUserId && isMyTurn) {
         if (isQueued) {
             const msg = document.createElement("p");
             msg.textContent = "Action queued for end of turn.";
@@ -564,13 +568,17 @@ function selectUnit(unitGroup) {
     const q = Number(unitGroup.dataset.q);
     const r = Number(unitGroup.dataset.r);
     const ownerId = Number(unitGroup.dataset.ownerId);
+    const ownerName = unitGroup.dataset.ownerName;
+    const ownerNation = unitGroup.dataset.ownerNation;
     const lastActionTurn = Number(unitGroup.dataset.lastActionTurn);
     const isQueued = unitGroup.dataset.queuedAction === "true";
 
-    unitInfo.textContent = type;
+    unitInfo.textContent = ownerId === currentUserId
+        ? type
+        : `${type} — ${ownerNation} (${ownerName})`;
     actionButtons.innerHTML = "";
 
-    if (ownerId === currentUserId && !hasEndedTurn) {
+    if (ownerId === currentUserId && isMyTurn) {
         if (isQueued) {
             const msg = document.createElement("p");
             msg.textContent = "Action queued for end of turn.";
@@ -914,6 +922,8 @@ document.addEventListener('DOMContentLoaded', () => {
             group.dataset.r = u.r;
             group.dataset.color = u.color;
             group.dataset.ownerId = u.owner_id;
+            group.dataset.ownerName = u.owner_name;
+            group.dataset.ownerNation = u.owner_nation;
             group.dataset.label = u.label;
             group.dataset.lastActionTurn = u.last_action_turn;
             group.dataset.queuedAction = u.queued_action;
@@ -959,6 +969,8 @@ document.addEventListener('DOMContentLoaded', () => {
             group.dataset.tier = s.tier;
             group.dataset.population = s.population;
             group.dataset.ownerId = s.owner_id;
+            group.dataset.ownerName = s.owner_name;
+            group.dataset.ownerNation = s.owner_nation;
             group.dataset.lastActionTurn = s.last_action_turn;
             group.dataset.queuedAction = s.queued_action;
 
@@ -1020,11 +1032,13 @@ document.addEventListener('DOMContentLoaded', () => {
         if (data.current_turn > currentTurn) {
             currentTurn = data.current_turn;
             if (turnDisplay) turnDisplay.textContent = currentTurn;
-            closeActionMenu(); // Close menu on turn transition
         }
 
         // Update button state (handled by HTMX now)
-        hasEndedTurn = data.has_ended_turn;
+        if (data.is_my_turn !== isMyTurn) {
+            isMyTurn = data.is_my_turn;
+            closeActionMenu(); // Close menu whenever active player changes
+        }
 
         // Update resources (handled by HTMX now)
 

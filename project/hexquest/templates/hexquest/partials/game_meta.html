@@ -6,17 +6,21 @@
           hx-swap="outerHTML">
         {% csrf_token %}
         <input type="hidden" name="action" value="end_turn">
-        <button type="submit" id="end-turn-btn" {% if nation.has_ended_turn %}class="waiting" disabled{% endif %}>
-            {% if nation.has_ended_turn %}Waiting...{% else %}End Turn{% endif %}
+        <button type="submit" id="end-turn-btn" {% if not is_my_turn %}class="waiting" disabled{% endif %}>
+            {% if is_my_turn %}End Turn{% else %}Waiting...{% endif %}
         </button>
     </form>
     <div class="game-stats">
         <div class="stat-item turn">
-            <span class="label">TURN</span>
+            <span class="label">Turn</span>
             <span class="value" id="turn-display">{{ game.current_turn }}</span>
         </div>
+        <div class="stat-item player">
+            <span class="label">Active Player</span>
+            <span class="value" id="active-player-display">{% if is_my_turn %}You{% else %}{{ active_nation.player.username }}{% endif %}</span>
+        </div>
         <div class="stat-item timer">
-            <span class="label">TIME</span>
+            <span class="label">Time</span>
             <span class="value" id="timer-display">{{ remaining_time }}</span><span class="unit">s</span>
         </div>
     </div>

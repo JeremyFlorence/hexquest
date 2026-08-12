@@ -172,6 +172,7 @@ def game_setup(request, game_id):
             from django.utils import timezone
             import datetime
             game.turn_end_time = timezone.now() + datetime.timedelta(seconds=game.turn_timer)
+            game.active_nation = game.nations.order_by("id").first()
             game.save()
             generate_world(game, game.width, game.height, game.seed)
             broadcast_setup_update(game)
@@ -228,6 +229,14 @@ def game_setup(request, game_id):
     )
 
 
+def _get_active_nation(game):
+    """The nation whose turn it currently is. Falls back to the first nation
+    (by join order) for games where a turn rotation hasn't started yet."""
+    if game.active_nation_id:
+        return game.active_nation
+    return game.nations.order_by("id").first()
+
+
 def _get_queued_actions(nation):
     """Helper to get all queued actions for a nation."""
     return [
@@ -265,22 +274,21 @@ def game_map(request, game_id):
     if request.method == "POST":
         action = request.POST.get("action")
         if action == "end_turn":
-            nation.has_ended_turn = True
-            nation.save()
-            
-            # Check if all nations have ended their turn
-            if not game.nations.filter(has_ended_turn=False).exists():
+            if _get_active_nation(game) == nation:
+                nation.has_ended_turn = True
+                nation.save()
                 process_turn_end(game)
-            else:
-                broadcast_game_update(game, user=request.user)
-            
+
             if request.headers.get('hx-request'):
                 game.refresh_from_db()
                 nation.refresh_from_db()
                 remaining_time = max(0, int((game.turn_end_time - timezone.now()).total_seconds())) if game.turn_end_time else 0
+                active_nation = _get_active_nation(game)
                 return render(request, "hexquest/partials/game_updates_all.html", {
                     "game": game,
                     "nation": nation,
+                    "active_nation": active_nation,
+                    "is_my_turn": active_nation == nation,
                     "remaining_time": remaining_time,
                     "queued_actions": _get_queued_actions(nation),
                 })
@@ -292,6 +300,8 @@ def game_map(request, game_id):
         process_turn_end(game)
         # Reload game after turn processing
         game.refresh_from_db()
+
+    active_nation = _get_active_nation(game)
 
     hexes = (
         HexTile.objects
@@ -321,6 +331,8 @@ def game_map(request, game_id):
             "hexes": hexes,
             "units_by_position": units_by_position,
             "nation": nation,
+            "active_nation": active_nation,
+            "is_my_turn": active_nation == nation,
             "remaining_time": int((game.turn_end_time - timezone.now()).total_seconds()) if game.turn_end_time else 0,
             "queued_actions": _get_queued_actions(nation),
             "chat_messages": chat_messages,
@@ -333,18 +345,22 @@ def process_turn_end(game):
     with transaction.atomic():
         # Lock the game record to prevent concurrent turn processing
         game = Game.objects.select_for_update().get(id=game.id)
-        
+
         if game.is_finished:
             return
 
-        # Double-check if turn should really end (either all ended or timer expired)
-        all_nations_ended = not game.nations.filter(has_ended_turn=False).exists()
-        timer_expired = game.turn_end_time and timezone.now() >= game.turn_end_time
-        
-        if not all_nations_ended and not timer_expired:
+        active_nation = _get_active_nation(game)
+        if active_nation is None:
             return
 
-        # Check for activity in this turn
+        # Double-check if turn should really end (either the active player
+        # ended it or their timer expired)
+        timer_expired = game.turn_end_time and timezone.now() >= game.turn_end_time
+
+        if not active_nation.has_ended_turn and not timer_expired:
+            return
+
+        # Check for activity on the active player's turn
         activity_occurred = False
 
         # Tracks how many units currently sit on each hex, so moves processed
@@ -353,8 +369,10 @@ def process_turn_end(game):
         # same destination in the same turn.
         occupancy = Counter(game.units.values_list("q", "r"))
 
-        # Process queued actions for units
-        units_with_queued = list(game.units.exclude(queued_action__isnull=True))
+        # Process queued actions for the active nation's units only - other
+        # nations can't have queued actions since only the active nation may
+        # act during its turn.
+        units_with_queued = list(active_nation.units.exclude(queued_action__isnull=True))
         for unit in units_with_queued:
             activity_occurred = True
             action = unit.queued_action
@@ -435,8 +453,8 @@ def process_turn_end(game):
 
             unit.save()
 
-        # Process queued actions for settlements
-        settlements_with_queued = list(game.settlements.exclude(queued_action__isnull=True))
+        # Process queued actions for the active nation's settlements only
+        settlements_with_queued = list(active_nation.settlements.exclude(queued_action__isnull=True))
         for settlement in settlements_with_queued:
             activity_occurred = True
             action = settlement.queued_action
@@ -474,34 +492,53 @@ def process_turn_end(game):
             settlement.save()
 
         if activity_occurred:
-            game.last_activity_turn = game.current_turn
-            game.save()
+            game.round_activity_occurred = True
 
-        # Process resource generation from buildings
-        for building in game.buildings.all():
-            if building.building_type == "wheat_farm":
-                building.hex_tile.owner.food += 2
-                building.hex_tile.owner.save()
+        active_nation.has_ended_turn = False
+        active_nation.save()
 
-        # Check for game end condition (3 turns without activity)
-        if game.current_turn - game.last_activity_turn >= 3:
-            game.is_finished = True
-            # Save statistics and delete temporary game objects
-            for nation in game.nations.all():
-                nation.settlement_count = nation.settlements.count()
-                nation.unit_count = nation.units.count()
-                nation.save()
+        # Determine who goes next, rotating through nations in join order.
+        # Wrapping back around to the first nation means a full round (every
+        # player has had one turn) has completed.
+        nations_ordered = list(game.nations.order_by("id"))
+        try:
+            current_index = nations_ordered.index(active_nation)
+        except ValueError:
+            current_index = -1
+        next_index = (current_index + 1) % len(nations_ordered)
+        round_complete = next_index == 0
+        next_nation = nations_ordered[next_index]
 
-            game.hexes.all().delete()
-            game.settlements.all().delete()
-            game.units.all().delete()
+        if round_complete:
+            # Process resource generation from buildings once per round
+            for building in game.buildings.all():
+                if building.building_type == "wheat_farm":
+                    building.hex_tile.owner.food += 2
+                    building.hex_tile.owner.save()
 
-        game.current_turn += 1
+            if game.round_activity_occurred:
+                game.last_activity_turn = game.current_turn
+
+            # Check for game end condition (3 rounds without activity)
+            if game.current_turn - game.last_activity_turn >= 3:
+                game.is_finished = True
+                # Save statistics and delete temporary game objects
+                for nation in game.nations.all():
+                    nation.settlement_count = nation.settlements.count()
+                    nation.unit_count = nation.units.count()
+                    nation.save()
+
+                game.hexes.all().delete()
+                game.settlements.all().delete()
+                game.units.all().delete()
+
+            game.current_turn += 1
+            game.round_activity_occurred = False
+
         game.turn_end_time = timezone.now() + datetime.timedelta(seconds=game.turn_timer)
+        if not game.is_finished:
+            game.active_nation = next_nation
         game.save()
-
-        # Reset all nations' end turn status
-        game.nations.all().update(has_ended_turn=False)
 
         broadcast_game_update(game)
 
@@ -517,11 +554,14 @@ def game_updates(request, game_id):
         game.refresh_from_db()
 
     remaining_time = int((game.turn_end_time - timezone.now()).total_seconds()) if game.turn_end_time else 0
-    
+    active_nation = _get_active_nation(game)
+
     if request.headers.get('hx-request'):
         return render(request, "hexquest/partials/game_updates_all.html", {
             "game": game,
             "nation": nation,
+            "active_nation": active_nation,
+            "is_my_turn": active_nation == nation,
             "remaining_time": max(0, remaining_time),
             "queued_actions": _get_queued_actions(nation),
         })
@@ -530,6 +570,9 @@ def game_updates(request, game_id):
         "current_turn": game.current_turn,
         "remaining_time": max(0, remaining_time),
         "has_ended_turn": nation.has_ended_turn,
+        "is_my_turn": active_nation == nation,
+        "active_player_id": active_nation.player_id if active_nation else None,
+        "active_nation_name": active_nation.name if active_nation else None,
         "gold": nation.gold,
         "food": nation.food,
         "unit_count": nation.units.count(),
@@ -638,8 +681,8 @@ def unit_move(request, game_id, unit_id):
     if unit.nation.player != request.user:
         return HttpResponseForbidden("You do not own this unit")
 
-    if unit.nation.has_ended_turn:
-        return JsonResponse({"error": "You have already ended your turn"}, status=400)
+    if _get_active_nation(unit.game) != unit.nation:
+        return JsonResponse({"error": "It is not your turn"}, status=400)
 
     if unit.queued_action:
         return JsonResponse({"error": "This unit has already acted this turn"}, status=400)
@@ -681,8 +724,8 @@ def unit_settle(request, game_id, unit_id):
     if unit.nation.player != request.user:
         return HttpResponseForbidden("You do not own this unit")
 
-    if unit.nation.has_ended_turn:
-        return JsonResponse({"error": "You have already ended your turn"}, status=400)
+    if _get_active_nation(unit.game) != unit.nation:
+        return JsonResponse({"error": "It is not your turn"}, status=400)
 
     if unit.queued_action:
         return JsonResponse({"error": "This unit has already acted this turn"}, status=400)
@@ -751,8 +794,8 @@ def upgrade_settlement(request, game_id, settlement_id):
     if settlement.nation.player != request.user:
         return HttpResponseForbidden("You do not own this settlement")
 
-    if settlement.nation.has_ended_turn:
-        return JsonResponse({"error": "You have already ended your turn"}, status=400)
+    if _get_active_nation(settlement.game) != settlement.nation:
+        return JsonResponse({"error": "It is not your turn"}, status=400)
 
     if settlement.queued_action:
         return JsonResponse({"error": "This settlement has already acted this turn"}, status=400)
@@ -782,8 +825,8 @@ def expand_settlement(request, game_id, settlement_id):
     if settlement.nation.player != request.user:
         return HttpResponseForbidden("You do not own this settlement")
 
-    if settlement.nation.has_ended_turn:
-        return JsonResponse({"error": "You have already ended your turn"}, status=400)
+    if _get_active_nation(settlement.game) != settlement.nation:
+        return JsonResponse({"error": "It is not your turn"}, status=400)
 
     if settlement.queued_action:
         return JsonResponse({"error": "This settlement has already acted this turn"}, status=400)
@@ -835,8 +878,8 @@ def builder_build(request, game_id, unit_id):
     if unit.nation.player != request.user:
         return HttpResponseForbidden("You do not own this unit")
 
-    if unit.nation.has_ended_turn:
-        return JsonResponse({"error": "You have already ended your turn"}, status=400)
+    if _get_active_nation(unit.game) != unit.nation:
+        return JsonResponse({"error": "It is not your turn"}, status=400)
 
     if unit.queued_action:
         return JsonResponse({"error": "This unit has already acted this turn"}, status=400)
@@ -897,8 +940,8 @@ def cancel_action(request, game_id):
     if obj.nation.player != request.user:
         return HttpResponseForbidden("You do not own this")
 
-    if obj.nation.has_ended_turn:
-        return JsonResponse({"error": "You have already ended your turn"}, status=400)
+    if _get_active_nation(obj.game) != obj.nation:
+        return JsonResponse({"error": "It is not your turn"}, status=400)
 
     obj.queued_action = None
     obj.save()

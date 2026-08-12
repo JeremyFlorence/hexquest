@@ -133,9 +133,18 @@ def _building_type(hex_tile):
         return None
 
 
+def _get_active_nation(game):
+    """The nation whose turn it currently is. Falls back to the first nation
+    (by join order) for games where a turn rotation hasn't started yet."""
+    if game.active_nation_id:
+        return game.active_nation
+    return game.nations.order_by("id").first()
+
+
 def _serialize_game_update(game, nation, all_units=None, all_settlements=None, all_hexes=None):
     from django.utils import timezone
     remaining_time = int((game.turn_end_time - timezone.now()).total_seconds()) if game.turn_end_time else 0
+    active_nation = _get_active_nation(game)
 
     if all_units is None:
         all_units = list(Unit.objects.filter(game=game).select_related("nation__player").all())
@@ -149,6 +158,9 @@ def _serialize_game_update(game, nation, all_units=None, all_settlements=None, a
         "current_turn": game.current_turn,
         "remaining_time": max(0, remaining_time),
         "has_ended_turn": nation.has_ended_turn,
+        "is_my_turn": active_nation.id == nation.id if active_nation else False,
+        "active_player_id": active_nation.player_id if active_nation else None,
+        "active_nation_name": active_nation.name if active_nation else None,
         "gold": nation.gold,
         "food": nation.food,
         "unit_count": len([u for u in all_units if u.nation_id == nation.id]),
@@ -161,6 +173,8 @@ def _serialize_game_update(game, nation, all_units=None, all_settlements=None, a
                 "color": u.nation.color,
                 "label": u.unit_type[0].upper(),
                 "owner_id": u.nation.player.id,
+                "owner_name": u.nation.player.username,
+                "owner_nation": u.nation.name,
                 "last_action_turn": u.last_action_turn,
                 "queued_action": bool(u.queued_action)
             } for u in all_units
@@ -175,6 +189,8 @@ def _serialize_game_update(game, nation, all_units=None, all_settlements=None, a
                 "color": s.nation.color,
                 "population": s.population,
                 "owner_id": s.nation.player.id,
+                "owner_name": s.nation.player.username,
+                "owner_nation": s.nation.name,
                 "last_action_turn": s.last_action_turn,
                 "queued_action": bool(s.queued_action)
             } for s in all_settlements

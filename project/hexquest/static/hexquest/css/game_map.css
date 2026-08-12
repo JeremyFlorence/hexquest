@@ -97,6 +97,13 @@ h1 {
     margin-left: 1px;
 }
 
+.stat-item.player .value {
+    max-width: 110px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
 .resources {
     display: flex;
     gap: 12px;
