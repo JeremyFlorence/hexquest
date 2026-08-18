@@ -122,7 +122,13 @@ if '://' not in _database_url:
 DATABASES = {
     'default': dj_database_url.parse(
         _database_url,
-        conn_max_age=600,
+        # DO's managed dev database sits behind a session-mode pgbouncer
+        # pool capped at 15 concurrent connections. This app serves
+        # websocket traffic via database_sync_to_async, which spawns a
+        # worker thread per DB call — persistent connections (CONN_MAX_AGE)
+        # would let those threads pin a pool slot open for minutes after
+        # going idle, so connections are closed after each use instead.
+        conn_max_age=0,
         conn_health_checks=True,
     )
 }
