@@ -8,18 +8,26 @@ services:
   instance_count: 1
   instance_size_slug: basic-xxs
   name: hexquest-web
-  run_command: cd project && gunicorn project.wsgi
+  build_command: cd project && python manage.py collectstatic --noinput
+  run_command: cd project && daphne -b 0.0.0.0 -p $PORT project.asgi:application
   source_dir: /
   envs:
   - key: DEBUG
     scope: RUN_TIME
     value: "False"
+  - key: SECRET_KEY
+    scope: RUN_TIME
+    type: SECRET
+    value: "CHANGE_ME"
   - key: ALLOWED_HOSTS
     scope: RUN_TIME
-    value: "*"
+    value: "${APP_DOMAIN}"
+  - key: CSRF_TRUSTED_ORIGINS
+    scope: RUN_TIME
+    value: "${APP_URL}"
   - key: DATABASE_URL
     scope: RUN_TIME
-    value: "postgres://user:password@host:port/dbname"
+    value: "${db.DATABASE_URL}"
 jobs:
 - name: migrate
   kind: PRE_DEPLOY
@@ -28,7 +36,7 @@ jobs:
   envs:
   - key: DATABASE_URL
     scope: RUN_TIME
-    value: "postgres://user:password@host:port/dbname"
+    value: "${db.DATABASE_URL}"
 databases:
 - engine: PG
   name: db
