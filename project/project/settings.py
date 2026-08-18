@@ -111,9 +111,17 @@ else:
 # Database
 # https://docs.djangoproject.com/en/6.0/ref/settings/#databases
 
+_database_url = os.environ.get('DATABASE_URL', '')
+if '://' not in _database_url:
+    # Not a real DSN (unset, empty, or an unresolved "${db.DATABASE_URL}"
+    # binding at build time, before DO has attached the database) — fall
+    # back to sqlite so commands that don't touch the DB (e.g. collectstatic
+    # during the build step) don't crash on an invalid URL.
+    _database_url = f"sqlite:///{BASE_DIR / 'db.sqlite3'}"
+
 DATABASES = {
     'default': dj_database_url.parse(
-        os.environ.get('DATABASE_URL') or f"sqlite:///{BASE_DIR / 'db.sqlite3'}",
+        _database_url,
         conn_max_age=600,
         conn_health_checks=True,
     )
