@@ -1,6 +1,7 @@
 import threading
 import time
 import logging
+from django.db import close_old_connections
 from django.utils import timezone
 from asgiref.sync import async_to_sync
 from channels.layers import get_channel_layer
@@ -25,6 +26,13 @@ def _timer_worker():
 
     while True:
         try:
+            # This loop runs on a plain background thread, outside Django's
+            # request/response cycle and outside Channels' database_sync_to_async
+            # wrapper — neither of which is here to recycle a stale or broken
+            # connection for us. Do it explicitly so a dropped connection
+            # (e.g. a pooler hiccup) doesn't permanently wedge the heartbeat.
+            close_old_connections()
+
             # Only process active, non-finished games
             active_games = Game.objects.filter(is_active=True, is_finished=False)
             
