@@ -1442,9 +1442,10 @@ document.addEventListener('DOMContentLoaded', () => {
         };
     }
 
-    // Timer countdown
-    // Dictated by server ticks via WebSocket (timer_tick message)
-    /*
+    // Timer countdown — ticks down locally every second so the display stays
+    // smooth even if a server timer_tick is delayed or dropped; server ticks
+    // (and game_update's >5s-drift resync above) remain the source of truth
+    // and correct this value whenever they arrive.
     setInterval(() => {
         if (remainingTime > 0) {
             remainingTime -= 1;
@@ -1457,7 +1458,6 @@ document.addEventListener('DOMContentLoaded', () => {
             }
         }
     }, 1000);
-    */
 
     // Connect to WebSocket for updates
     connectGameSocket();
