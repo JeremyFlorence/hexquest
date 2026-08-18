@@ -8,7 +8,6 @@ services:
   instance_count: 1
   instance_size_slug: basic-xxs
   name: hexquest-web
-  build_command: cd project && python manage.py collectstatic --noinput
   run_command: cd project && daphne -b 0.0.0.0 -p $PORT project.asgi:application
   source_dir: /
   envs:
