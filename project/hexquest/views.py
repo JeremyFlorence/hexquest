@@ -472,14 +472,16 @@ def process_turn_end(game):
                 target = Unit.objects.filter(game=game, id=action['target_id']).first()
                 if target and target.nation_id != unit.nation_id and hex_distance(unit.q, unit.r, target.q, target.r) == 1:
                     unit.last_action_turn = game.current_turn
-                    target.hitpoints -= unit.attack
-                    combat_events.append({"q": target.q, "r": target.r, "damage": unit.attack})
+                    damage = Unit.roll_damage(unit.attack)
+                    target.hitpoints -= damage
+                    combat_events.append({"q": target.q, "r": target.r, "damage": damage})
                     if target.hitpoints <= 0:
                         occupancy[(target.q, target.r)] -= 1
                         target.delete()
                     else:
-                        unit.hitpoints -= target.defense
-                        combat_events.append({"q": unit.q, "r": unit.r, "damage": target.defense})
+                        counter_damage = Unit.roll_damage(target.defense)
+                        unit.hitpoints -= counter_damage
+                        combat_events.append({"q": unit.q, "r": unit.r, "damage": counter_damage})
                         target.save()
                     if unit.hitpoints <= 0:
                         occupancy[(unit.q, unit.r)] -= 1

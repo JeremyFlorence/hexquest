@@ -1,3 +1,5 @@
+import random
+
 from django.db import models
 from django.contrib.auth.models import User
 
@@ -118,6 +120,13 @@ class Unit(models.Model):
         "swordsman": 20,
     }
 
+    # Scales a unit's attack/defense stat into an actual hit's damage. Chosen
+    # so a duel between two full-health combat units (1000 HP, attack/defense
+    # ~8-10) typically ends in about 3-4 exchanges rather than dozens.
+    DAMAGE_SCALE = 30
+    # Each hit's damage is randomized by +/- this fraction of its scaled value.
+    DAMAGE_VARIANCE = 0.15
+
     game = models.ForeignKey(Game, on_delete=models.CASCADE, related_name="units")
     nation = models.ForeignKey(Nation, on_delete=models.CASCADE, related_name="units")
     q = models.IntegerField()
@@ -134,6 +143,13 @@ class Unit(models.Model):
     @classmethod
     def stats_for(cls, unit_type):
         return cls.UNIT_STATS.get(unit_type, {"hitpoints": 100, "attack": 1, "defense": 1})
+
+    @classmethod
+    def roll_damage(cls, stat):
+        """Randomized damage for one attack or counter-attack, derived from
+        an attack/defense stat via DAMAGE_SCALE and jittered by DAMAGE_VARIANCE."""
+        variance = random.uniform(1 - cls.DAMAGE_VARIANCE, 1 + cls.DAMAGE_VARIANCE)
+        return max(1, round(stat * cls.DAMAGE_SCALE * variance))
 
     @property
     def max_hitpoints(self):
